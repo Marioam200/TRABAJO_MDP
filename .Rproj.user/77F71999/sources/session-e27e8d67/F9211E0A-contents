@@ -1,0 +1,534 @@
+---
+title: "Untitled"
+output:
+  html_document: default
+  pdf_document: default
+date: "2025-02-24"
+---
+
+## Cargamos la base de datos
+
+```{r}
+library(openxlsx)
+library(dplyr)
+
+mlb_raw = read.xlsx("mlbtop100.xlsx", )
+```
+
+```{r}
+head(mlb_raw, 10)
+
+```
+
+## Transformación de variables
+
+```{r}
+# Dividir variables absolutas por partido y eliminar partidos totales
+mlb <- mlb_raw %>%
+  mutate(across(c(partidos, bat_y_rec, bateos, correr, golpe, doble, triple, jonron, carreras, b_rob, pillado, paseo, ponche, bas_tot, dos_fuera, pitch_cpo, sac_suav, sac_fuert, base_gratis), 
+                ~ . / partidos)) %>%
+  select(- partidos)
+
+# Poner team y leage antes de age
+mlb <- mlb %>%
+  select(player, team, year, everything())
+
+mlb$league = ifelse(mlb$league == "AL", 1, 0)
+
+mlb 
+```
+
+## Describimos el tipo de cada variable
+
+```{r}
+descMlb = data.frame("variable" = colnames(mlb),
+                     "tipo" = c(rep("categorical", 3), "numerical", "binary", rep("numerical", 19), rep("binary", 5)), stringsAsFactors = FALSE)
+rownames(descMlb) = descMlb$variable
+descMlb
+mlb
+```
+
+```{r}
+summary(mlb[, descMlb$variable[descMlb$tipo == "numerical"]])
+```
+
+## Variabilidad númericas
+
+```{r}
+mySD = apply(mlb[,descMlb$variable[descMlb$tipo == "numerical"]], 2, sd)
+
+myMU = colMeans(mlb[,descMlb$variable[descMlb$tipo == "numerical"]])
+myCV = mySD/myMU
+sort(myCV)
+```
+
+## Variabilidad categóricas
+
+```{r}
+apply(mlb[,descMlb$variable[descMlb$tipo == "binary"]], 2, table, useNA = "i")
+```
+
+## Valores anómalos
+
+```{r}
+par(mar = c(9,4,2,2))
+boxplot(mlb[, descMlb$variable[descMlb$tipo == "numerical"]], log = "y", las = 2, ylim = c(1e0, 1e5))  # Ajusta según tu rango
+```
+
+```{r}
+#apply log to numeric values
+mlb.log <- mlb
+mlb.log[, descMlb$variable[descMlb$tipo == "numerical"]] <- log(mlb.log[, descMlb$variable[descMlb$tipo == "numerical"]] + 1)
+mlb.log
+```
+
+```{r}
+par(mar = c(9,4,2,2))
+boxplot(mlb.log[, descMlb$variable[descMlb$tipo == "numerical"]], log = "y", las = 2, ylim = c(1e-1,1e1))  # Ajusta según tu rango
+par(mar = c(9,4,2,2))
+boxplot(mlb.log[, descMlb$variable[descMlb$tipo == "numerical"]], log = "y", las = 2, ylim = c(1e0, 1e5))  # Ajusta según tu rango
+```
+
+```{r}
+library(FactoMineR)
+library(factoextra)
+res.pca = PCA(mlb.log, scale.unit = TRUE, graph = FALSE, ncp = 10,  quali.sup = which(descMlb$tipo == "categorical"), quanti.sup = c(5, 25:29))
+eig.val <- get_eigenvalue(res.pca)
+VPmedio = 100 * (1/nrow(eig.val))
+fviz_eig(res.pca, addlabels = TRUE, ncp = 12) +
+  geom_hline(yintercept=VPmedio, linetype=2, color="red")
+```
+
+## Continuar desde aquí
+
+```{r}
+K = 5
+res.pca = PCA(mlb.log, scale.unit = TRUE, graph = FALSE, ncp = K, quali.sup = which(descMlb$tipo == "categorical"), quanti.sup = c(5, 25:29))
+```
+
+```{r}
+# Gráfico T2 Hotelling
+misScores = res.pca$ind$coord[,1:K]
+miT2 = colSums(t(misScores**2)/eig.val[1:K,1])
+I = nrow(mlb.log)
+F95 = K*(I**2 - 1)/(I*(I - K)) * qf(0.95, K, I-K)
+F99 = K*(I**2 - 1)/(I*(I - K)) * qf(0.99, K, I-K)
+
+plot(1:length(miT2), miT2, type = "p", xlab = "MLB", ylab = "T2")
+abline(h = F95, col = "orange", lty = 2, lwd = 2)
+abline(h = F99, col = "red3", lty = 2, lwd = 2)
+
+```
+
+```{r}
+anomalas95 = which(miT2 > F95)
+anomalas95
+length(anomalas95)
+```
+
+## Esperamos que haya un 5% de falsos positivos, es decir, 105 falsos positivos más o menos, y obtenemos 131. Mantendremos esos valores para estudiar si corresponden a deportistas que sobresalen respecto al resto.
+
+```{r}
+length(mlb.log$year)
+```
+
+```{r}
+# Score plots
+library(grid)
+library(gridExtra)
+
+
+p1 = fviz_pca_ind(res.pca, axes = c(1,2), geom = c("point"),
+                  habillage = factor(miT2 > F95)) +
+  tune::coord_obs_pred()
+
+p2 = fviz_pca_ind(res.pca, axes = c(1,5), geom = c("point"), 
+                  habillage = factor(miT2 > F95)) +
+  tune::coord_obs_pred()
+
+grid.arrange(p1,p2, nrow = 1)
+```
+
+```{r}
+contribT2 = function (X, scores, loadings, eigenval, observ, cutoff = 2) {
+  # X is data matrix and must be centered (or centered and scaled if data were scaled)
+  misScoresNorm = t(t(scores**2) / eigenval)
+  misContrib = NULL
+  for (oo in observ) {
+    print(rownames(scores)[oo])
+    print(scores[oo,])
+    misPCs = which(as.numeric(misScoresNorm[oo,]) > cutoff)
+    lacontri = sapply(misPCs, function (cc) (scores[oo,cc]/eigenval[cc])*loadings[,cc]*X[oo,])
+    lacontri = rowSums((1*(sign(lacontri) == 1))*lacontri)
+    misContrib = cbind(misContrib, lacontri)
+  }
+  colnames(misContrib) = rownames(misScoresNorm[observ,])
+  return(misContrib)
+}
+```
+
+```{r}
+mlbCE = mlb.log[,descMlb$tipo == "numerical"]
+mlbCE = scale(mlbCE, center = TRUE, scale = TRUE)
+X = as.matrix(mlbCE)
+# Calculamos los loadings a partir de las coordenadas de las variables
+# ya que la librería FactoMineR nos devuelve los loadings ponderados 
+# por la importancia de cada componente principal.
+misLoadings = sweep(res.pca$var$coord, 2, sqrt(res.pca$eig[1:K,1]), FUN="/")
+# Calculamos las contribuciones
+mycontrisT2 = contribT2(X = X, scores = misScores, loadings = misLoadings, 
+                        eigenval = eig.val[1:K,1], observ = which.max(miT2),
+                        cutoff = 2)
+```
+
+## ¿¿Jugador 4 mayor influencia en el análisis??
+
+```{r}
+par(mar = c(10,2.3,3,1))
+barplot(mycontrisT2[,1],las=2, #cex.names = 0.5,
+        main= paste0("Observación: ", rownames(mlb.log)[which.max(miT2)]))
+```
+
+## ¿Eliminamos o es relevante?
+
+```{r}
+myE = X - misScores %*% t(misLoadings) 
+mySCR = rowSums(myE^2)  
+plot(1:length(mySCR), mySCR, type = "l", main = "Distancia al modelo", 
+     ylab = "SCR", xlab = "MLB", ylim = c(0, 80))
+g = var(mySCR)/(2*mean(mySCR))
+h = (2*mean(mySCR)^2)/var(mySCR)
+chi2lim = g*qchisq(0.95, df = h)
+chi2lim99 = g*qchisq(0.99, df = h)
+abline(h = chi2lim, col = "orange", lty = 2, lwd = 2)
+abline(h = chi2lim99, col = "red3", lty = 2, lwd = 2)
+```
+
+```{r}
+## Función para calcular las contribuciones a la SCR
+ContriSCR = function(E, SCR) {
+  # E es la matriz de residuos del modelo 
+  # SCR es la suma de cuadrados residual
+  contribucion = NULL
+  for (j in 1:length(SCR)){
+    eind<-E[j,]
+    signo<-sign(eind)
+    contri<-(signo*(eind^2)/SCR[j])*100
+    contribucion<-rbind(contribucion,contri)
+  }
+  rownames(contribucion) = rownames(E)
+  return(contribucion)
+}
+## Calculamos las contribuciones de todas las observaciones
+mycontris = ContriSCR(E = myE, SCR = mySCR)
+## Gráfico para Special_K
+barplot(mycontris["4",],las=2, cex.names = 0.7,
+        main=c('Contribuciones a SCR para FILA 4'))
+```
+
+```{r}
+# Encuentra índices de observaciones que superan la línea naranja (95%)
+outliers_95 <- which(mySCR > chi2lim)
+
+# Encuentra índices de observaciones que superan la línea roja (99%)
+outliers_99 <- which(mySCR > chi2lim99)
+
+# Muestra los índices y valores de SCR que superan los umbrales
+data.frame(
+  Observacion = c(outliers_95),
+  SCR = mySCR[c(outliers_95)],
+  Nivel = c(rep("95%", length(outliers_95))))
+
+
+
+```
+
+```{r}
+print(mlb[4, c("year", "age", "paseo", "prem_novato")])
+```
+
+## Hemos podido comprobar que los valores anómalos que teníamos no se debían a errores que tuviéramos que eliminar, sino a deportistas que tanto para bien como para mal destacan en un ámbito del béisbol.
+
+```{r}
+fviz_pca_var(res.pca, axes = c(1,2), repel = TRUE, col.var = "contrib",
+             gradient.cols = c("#00AFBB", "#E7B800", "#FC4E07"))
+```
+
+```{r}
+fviz_pca_var(res.pca, axes = c(1,3), repel = TRUE, col.var = "contrib",
+             gradient.cols = c("#00AFBB", "#E7B800", "#FC4E07"))
+```
+
+```{r}
+fviz_pca_var(res.pca, axes = c(1,4), repel = TRUE, col.var = "contrib",
+             gradient.cols = c("#00AFBB", "#E7B800", "#FC4E07"))
+```
+
+```{r}
+fviz_pca_var(res.pca, axes = c(1,5), repel = TRUE, col.var = "contrib",
+             gradient.cols = c("#00AFBB", "#E7B800", "#FC4E07"))
+```
+
+```{r}
+panel.cor <- function(x, y, digits = 2, prefix = "", cex.cor, ...)
+{
+    par(usr = c(0, 1, 0, 1))
+    r <- cor(x, y)
+    txt <- format(c(r, 0.123456789), digits = digits)[1]
+    txt <- paste0(prefix, txt)
+    if(missing(cex.cor)) cex.cor <- 0.8/strwidth(txt)
+    text(0.5, 0.5, txt, cex = cex.cor * abs(r))
+}
+
+get_variables_greatest_contrib <- function(res.pca, dim, n) {
+    # Get the contributions of variables to the specified dimension
+    contrib <- res.pca$var$contrib[, dim]
+    # Select variables greater than the mean ordered by values
+    contrib <- contrib[order(contrib, decreasing = TRUE)]
+    
+    # if n is not specified, return variables greater than mean, otherwise, return top n variables
+    if (missing(n)) {
+        contrib <- contrib[contrib > mean(contrib)]
+    } else {
+        contrib <- contrib[1:n]
+    }
+    # Select an array with the names of variables
+    contrib_greater_mean_names <- names(contrib)
+    return(contrib_greater_mean_names)
+}
+
+pairs(mlb.log[, get_variables_greatest_contrib(res.pca, dim=1, n=8)],
+      lower.panel = panel.cor, pch = 20, col = "red3")
+```
+
+```{r}
+fviz_contrib(res.pca, choice = "var", axes = 1)
+```
+
+
+```{r}
+head(res.pca$ind$cos2)
+
+```
+
+```{r}
+library(readxl)
+library(factoextra)
+library(cluster)
+library(gridExtra)
+library(NbClust)
+library(clValid)
+library(FactoMineR)
+library(knitr)
+
+
+```
+
+```{r}
+df = read.xlsx("mlbtop100.xlsx", )
+
+```
+
+## **Selección de variables a utilizar y preparación de datos**
+
+Nuestro objetivo al aplicar **clustering** a este conjunto de datos es **agrupar jugadores de béisbol según similitudes en su rendimiento estadístico**, con el fin de identificar distintos perfiles de jugadores. Esta técnica nos permite explorar los datos sin necesidad de una variable dependiente, lo cual es útil para descubrir patrones ocultos, clasificar jugadores de forma objetiva y apoyar procesos de toma de decisiones como el scouting o la planificación de equipos.
+
+Para que el análisis de clustering sea válido y significativo, decidimos trabajar únicamente con **variables numéricas que reflejan directamente el rendimiento en el campo**. Por esta razón, excluimos una serie de variables que no cumplían con este criterio.
+
+Decidimos **excluir las siguientes variables**:
+
+-   `player`: Es simplemente el nombre del jugador, por lo tanto no aporta información cuantitativa para el análisis.
+
+-   `year`: El año no tiene un impacto directo en el rendimiento del jugador y podría introducir ruido en los clústeres.
+
+-   `team` y `league`: Son variables categóricas que reflejan el contexto del jugador, pero no su desempeño individual.
+
+-   `esp_game`, `mvp`, `premio_bat`, `premio_def`, `prem_novato`: Estas variables representan premios o reconocimientos que, si bien pueden estar relacionados con el rendimiento, también están influenciadas por factores externos o subjetivos (como votaciones o popularidad). Por lo tanto, preferimos no incluirlas para evitar sesgos.
+
+```{r}
+# Excluir columnas específicas con subset()
+df_filtrado <- subset(df, select = -c(player, year, team, league,
+                                      esp_game, mvp, premio_bat, premio_def, prem_novato))
+
+# Verificar columnas numéricas
+numericas <- sapply(df_filtrado, is.numeric)
+
+# Normalizar
+df_scaled <- df_filtrado
+df_scaled[, numericas] <- scale(df_filtrado[, numericas])
+
+```
+
+## **Medida de distancia y tendencia de agrupamiento**
+
+Hemos decidido usar la distancia euclídea porque:
+
+-   Nuestras variables están todas **escaladas con `scale()`**, por lo que están en la misma escala.
+
+-   Las variables representan magnitudes cuantitativas (WAR, hits, jonrones, etc.).
+
+<!-- -->
+
+-   Estamos interesado en **grupos basados en similitud general de rendimiento**, y la distancia euclidiana captura bien esa idea geométrica.
+
+```{r}
+midist <- get_dist(df_scaled[, numericas], stand = FALSE, method = "euclidean")
+fviz_dist(midist, show_labels = TRUE, lab_size = 0.3,
+          gradient = list(low = "#00AFBB", mid = "white", high = "#FC4E07"))
+```
+
+## **Modelos jerárquicos**
+
+### **Método de Ward**
+
+En primer lugar, obtendremos el número de clusters óptimo para este algoritmo. Podemos aplicar distintos criterios. En nuestro caso combinaremos el análisis del coeficiente de Silhouette con la variabilidad intra-cluster.
+
+```{r}
+library(grid)
+library(gridExtra)
+p1 = fviz_nbclust(x = df_scaled[, numericas], FUNcluster = hcut, method = "silhouette", 
+                  hc_method = "ward.D2", k.max = 10, verbose = FALSE
+                  ) + labs(title = "Num. optimo clusters")
+p2 = fviz_nbclust(x = df_scaled[, numericas], FUNcluster = hcut, method = "wss", 
+                  hc_method = "ward.D2", k.max = 10, verbose = FALSE 
+                  ) + labs(title = "Num. optimo clusters")
+grid.arrange(p1, p2, nrow = 1)
+```
+
+Los resultados para el coeficiente Silhouette indican que el número óptimo de clusters es claramente 2. Sin embargo, la suma de cuadrados intra-cluster es demasiado elevada para dos clusters. El siguiente óptimo de Silhoutte es 3 clusters, la variabilidad intra-cluster ya baja bastante y, además, parece el punto en el que se crea el codo. Por tanto, fijaremos el número de clusters en 3.
+
+Creamos a continuación los 3 clusters con el modelo jerárquico y el método de Ward. Dado que el número de observaciones lo permite, generaremos el dendrograma para visualizar la agrupación de los cereales.
+
+```{r}
+clust1 <- hclust(midist, method="ward.D2")
+grupos1 <- cutree(clust1, k=3)
+table(grupos1)
+```
+
+```{r}
+fviz_dend(clust1, h = 3,
+          cex = 0.5, color_labels_by_k = TRUE,
+          rect = TRUE)
+```
+
+### **Método de la media**
+
+Ahora estimaremos el número óptimo de clusters para el algoritmo jerárquico con el método de la media.
+
+```{r}
+p1 = fviz_nbclust(x = df_scaled[, numericas], FUNcluster = hcut, method = "silhouette", 
+                  hc_method = "average", k.max = 10, verbose = FALSE
+                  ) + labs(title = "Num. optimo clusters")
+p2 = fviz_nbclust(x = df_scaled[, numericas], FUNcluster = hcut, method = "wss", 
+                  hc_method = "average", k.max = 10, verbose = FALSE
+                  ) + labs(title = "Num. optimo clusters")
+grid.arrange(p1, p2, nrow = 1)
+```
+
+Los resultados para el coeficiente Silhouette indican que el número óptimo de clusters es claramente 2. Sin embargo, la suma de cuadrados intra-cluster es demasiado elevada para dos clusters. El siguiente óptimo de Silhoutte es 4 clusters, la suma de cuadrados intra-cluster baja ya bastante y parece que es el punto en el que se crea el codo. Por tanto, fijaremos el número de clusters en 4.
+
+```{r}
+clust2 <- hclust(midist, method="average")
+grupos2 = cutree(clust2, k = 4)
+fviz_dend(clust2, k = 4,
+          cex = 0.5,
+          color_labels_by_k = TRUE, # colorear etiquetas por grupo
+          rect = TRUE) # dibujar rectángulos
+```
+
+```{r}
+fviz_cluster(object = list(data=df_scaled[, numericas], cluster=grupos1), stand = FALSE,
+             ellipse.type = "convex", geom = "point", show.clust.cent = FALSE,
+             labelsize = 8)  +
+  labs(title = "Modelo jerarquico + Proyeccion PCA",
+       subtitle = "Dist Spearman, Metodo Ward, K=3") +
+  theme_bw() +
+  theme(legend.position = "bottom")
+```
+
+## **Métodos de partición**
+
+### **K-medias**
+
+En primer lugar, aplicaremos el algoritmo de k-medias y determinaremos el número óptimo de clusters para este algoritmo.
+
+```{r}
+p1 = fviz_nbclust(x = df_scaled[, numericas], FUNcluster = kmeans, method = "silhouette", 
+             k.max = 10, verbose = FALSE) +
+  labs(title = "K-means")
+p2 = fviz_nbclust(x = df_scaled[, numericas], FUNcluster = kmeans, method = "wss", 
+             k.max = 10, verbose = FALSE) +
+  labs(title = "K-means")
+grid.arrange(p1, p2, nrow = 1)
+```
+
+```{r}
+clust3 <- kmeans(df_scaled[, numericas], centers = 4, nstart = 25)
+colores <- rainbow(4)
+
+```
+
+### **K-medoides**
+
+```{r}
+p1 = fviz_nbclust(x = df_scaled[, numericas], FUNcluster = pam, method = "silhouette", 
+             k.max = 10, verbose = FALSE, diss = midist) +
+  labs(title = "Numero optimo de clusters")
+p2 = fviz_nbclust(x = df_scaled[, numericas], FUNcluster = pam, method = "wss", 
+             k.max = 10, verbose = FALSE, diss = midist) +
+  labs(title = "Numero optimo de clusters")
+grid.arrange(p1, p2, nrow = 1)
+```
+
+```{r}
+clust4 <- pam(df_scaled[, numericas], k = 4)
+table(clust4$clustering)
+```
+
+```{r}
+clust4 <- pam(midist, diss =TRUE, k = 4)
+clustPAM = clust4$clustering
+table(clustPAM)
+```
+
+```{r}
+fviz_cluster(object = list(data=df_scaled[, numericas], cluster=clust4$clustering), stand = FALSE,
+             ellipse.type = "convex", geom = "point", show.clust.cent = FALSE,
+             labelsize = 8)  +
+  labs(title = "K-MEDOIDES + Proyeccion PCA",
+       subtitle = "Dist euclidea, K=7") +
+  theme_bw() +
+  theme(legend.position = "bottom")
+```
+
+## **Selección y validación del método de clustering**
+
+Para decidir con qué resultados de clustering nos quedamos, utilizaremos el coeficiente de Silhouette.
+
+```{r}
+par(mfrow = c(1,3))
+plot(silhouette(grupos1, midist), col=rainbow(2), border=NA, main = "WARD")
+plot(silhouette(clust3$cluster, midist), col=colores, border=NA, main = "K-MEDIAS")
+plot(silhouette(clustPAM, midist), col=rainbow(3), border=NA, main = "K-MEDOIDES")
+```
+
+## **Interpretación de los resultados del clustering**
+
+Veamos los perfiles medios de cada cluster para caracterizar los clusters obtenidos:
+
+```{r}
+perfiles = aggregate(df_scaled[, numericas], by = list("cluster" = clustPAM), mean)
+kable(perfiles)
+```
+
+```{r}
+mediasCluster <- aggregate(df_scaled[, numericas], by = list(cluster = clust3$cluster), FUN = mean)
+
+```
+
+```{r}
+matplot(t(mediasCluster), type = "l", col = rainbow(4), ylab = "", xlab = "", lwd = 2,
+        lty = 1, main = "Perfil medio de los clusters", xaxt = "n")
+axis(side = 1, at = 1:ncol(df_scaled[, numericas]), labels = colnames(df_scaled[, numericas]), las = 2)
+legend("topleft", as.character(1:4), col = rainbow(4), lwd = 2, ncol = 3, bty = "n")
+```
