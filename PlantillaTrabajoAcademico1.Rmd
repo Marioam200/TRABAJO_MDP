@@ -1,6 +1,6 @@
 ---
-title: "Título del trabajo"
-author: "NOMBRES Y APELLIDOS de los autores (Grupo XX-XX)"
+title: "Estudio sobre los Cristales"
+author: "Mario Álvarez Martínez, Jorge Aranda Honrubia, Pablo de Puelles Carceles, Julia Ruiz Picó,  Cristina Tarraga Herrero (Grupo A1-10)"
 date: "`r Sys.Date()`"
 output: pdf_document
 ---
@@ -10,9 +10,6 @@ output: pdf_document
 knitr::opts_chunk$set(echo = FALSE, cache = FALSE, include = TRUE, warning = FALSE)
 library(tinytex)
 ```
-
-
-
 # Exploración y preparación de la BBDD  [3 páginas máximo]
 
 ```{r}
