@@ -1,0 +1,84 @@
+---
+title: "ESTUDIO DE CRISTALES"
+author: "MARIO ÁLVAREZ, CRISTINA TARRAGA, JORGE ARANDA, PABLO DE PUELLES, JULIA RUIZ (Grupo A1-10)"
+date: "`r Sys.Date()`"
+output: pdf_document
+---
+
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE, cache = FALSE, include = TRUE, warning = FALSE)
+library(tinytex)
+```
+
+
+
+# Exploración y preparación de la BBDD  [3 páginas máximo]
+Comenzaremos descargando la base de datos y analizando un poco que información nos da, también vamos a ver como se caracterizan las variables de está y preparar la base de datos para un mejor analisis eliminando los valores anomalos como clasificando nuestros datos. 
+
+```{r datos}
+datos <- read_csv("10A_cristales.csv")
+```
+Tras a ver descargado la base de datos comenzarmeos a ver cual es su dimensión para saber como de grande es nuestra base de datos.
+
+```{r dimension}
+dim(X10A_cristales)
+```
+En nuestro caso se han registrado `r ncol(X10A_cristales)` variables para `r nrow(X10A_cristales)` cristales guardados en nuestra base de datos.
+
+Ahora comenzaremos a analizar el tipo de variables que tengo en la base de datos.
+```{r datos}
+descData = data.frame("variable" = colnames(data),"tipo" = c(rep("númerica", 11), rep("categórica", 2), ("identificador"), rep("númerica", 2)))
+rownames(descData) = descData$variable
+descData
+```
+
+## Descripción y naturaleza de las variables
+
+<!-- Incluir tabla con las variables, su descripción y el tipo de variable (numérica, categórica nominal, categórica ordinal, identificador, fecha, etc.) -->
+
+<!-- Indicar el número de observaciones iniciales en la BBDD. -->
+
+
+## Análisis descriptivo
+
+<!-- Incluir resultados que muestren posibles anomalías detectadas e indicar cómo se han corregido. -->
+
+<!-- Si se elimina alguna observación o variable, indicarlo claramente y justificarlo. -->
+
+
+
+# Análisis de Componentes Principales  [5 páginas máximo]
+
+
+## Tratamiento de los datos
+
+<!-- Selección de variables a incluir en el modelo? Centrado y escalado? Transformación de variables? -->
+
+
+## Selección del número de componentes principales
+
+
+
+
+## Validación del modelo
+
+<!-- Detección de valores anómalos y decisiones tomadas a partir de los mismos. -->
+
+
+## Interpretación del modelo
+
+<!-- Interpretación del gráfico de scores y de loadings o de variables. -->
+
+
+## Conclusiones
+
+
+
+
+# Reglas de asociación  [OPCIONAL. 2 páginas máximo]
+
+
+
+# Análisis Factorial de Correspondencias  [OPCIONAL. 2 páginas máximo]
+
