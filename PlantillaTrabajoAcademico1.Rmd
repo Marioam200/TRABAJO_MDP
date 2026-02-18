@@ -1,6 +1,6 @@
 ---
-title: "ESTUDIO DE CRISTALES"
-author: "MARIO ÁLVAREZ, CRISTINA TARRAGA, JORGE ARANDA, PABLO DE PUELLES, JULIA RUIZ (Grupo A1-10)"
+title: "Título del trabajo"
+author: "NOMBRES Y APELLIDOS de los autores (Grupo XX-XX)"
 date: "`r Sys.Date()`"
 output: pdf_document
 ---
@@ -14,24 +14,16 @@ library(tinytex)
 
 
 # Exploración y preparación de la BBDD  [3 páginas máximo]
-Comenzaremos descargando la base de datos y analizando un poco que información nos da, también vamos a ver como se caracterizan las variables de está y preparar la base de datos para un mejor analisis eliminando los valores anomalos como clasificando nuestros datos. 
 
-```{r datos}
-datos <- read_csv("10A_cristales.csv")
-```
-Tras a ver descargado la base de datos comenzarmeos a ver cual es su dimensión para saber como de grande es nuestra base de datos.
+```{r}
 
-```{r dimension}
-dim(X10A_cristales)
-```
-En nuestro caso se han registrado `r ncol(X10A_cristales)` variables para `r nrow(X10A_cristales)` cristales guardados en nuestra base de datos.
+data <- read.csv("~/Segundo/MDP 1/Práctica 1/10A_cristales.csv", row.names = 14, as.is = TRUE)
+View(data)
 
-Ahora comenzaremos a analizar el tipo de variables que tengo en la base de datos.
-```{r datos}
-descData = data.frame("variable" = colnames(data),"tipo" = c(rep("númerica", 11), rep("categórica", 2), ("identificador"), rep("númerica", 2)))
-rownames(descData) = descData$variable
-descData
+# Empleo la columna 14 (identifcador) cono nombre de las filas. #
+
 ```
+
 
 ## Descripción y naturaleza de las variables
 
@@ -40,7 +32,75 @@ descData
 <!-- Indicar el número de observaciones iniciales en la BBDD. -->
 
 
+```{r}
+descData = data.frame("variable" = colnames(data),
+                      "tipo" = c(rep("numerical", 11), rep("categorical", 2), rep("numerical", 2)
+                              
+                              ))
+                      
+rownames(descData) = descData$variable
+descData
+```
+
+
+## Variables constantes o casi constantes
+
+Comprobaremos ahora si existe alguna variable que no varía (o que varía muy poco) y la eliminaremos también de la base de datos, ya que no se tratará de una variable aleatoria y no tiene sentido incluirla en el análisis estadístico. Esto se comprueba de forma diferente para las variables numéricas y para las variables categóricas.
+
+En el caso de las variables numéricas, podemos calcular su desviación típica. Como la desviación típica depende de las unidades de medida y de la magnitud de la variable, es más aconsejable utilizar el coeficiente de variación.
+
+Para las variables categóricas, obtendremos una tabla de frecuencias para comprobar si toman distintos valores.
+
+
+```{r}
+## Numéricas
+
+summary(data[,descData$variable[descData$tipo == "numerical"]])
+
+# Variabilidad de las variables numéricas (desviación típica)
+
+mySD = apply(data[,descData$variable[descData$tipo == "numerical"]], 2, sd)
+
+# Mejor calcular el coeficiente de variación porque no depende de las unidades o magnitud de las variables
+
+myMU = colMeans(data[,descData$variable[descData$tipo == "numerical"]])
+myCV = mySD/myMU
+sort(myCV)
+
+## Categóricas
+
+# Tabla que muestra la distribución de las variables categóricas según sus diferentes valores. #
+
+apply(data[,descData$variable[descData$tipo == "categorical"]], 2, table, useNA = "i")
+
+# Tabla que muestra el porcentaje de observaciones para cada categoría de las variables categóricas. #
+
+apply(data[,descData$variable[descData$tipo == "categorical"]], 2,
+      function (x) round(100*table(x)/sum(table(x)), 2))
+
+
+````
+
+Por ahora se decide no eliminar ninguna variable. 
+
+
+
 ## Análisis descriptivo
+
+
+# Valores inconsistentes o anómalos
+
+Analizaremos ahora si alguna variable tiene valores inconsistentes, es decir, valores que no son posibles dentro del rango de definición de la variable y que por tanto se deben a un error. En ese caso, estos valores se sustituirán por NA convirtiéndose en valores faltantes o perdidos. Los valores inconsistentes se pueden observar tanto en variables numéricas como categóricas.
+
+También estudiaremos la existencia de posibles valores anómalos en las variables numéricas. A veces, estos valores anómalos pueden deberse a un error (serían valores inconsistentes y se sustituirían por NA).Pero otras veces, los valores anómalos son valores posibles pero muy atípicos o extremos. En este último caso, debemos tomar la decisión de mantener la observación anómala en el modelo o eliminarla (no se reemplaza el valor anómalo por NA, sino que se elimina el registro completo).
+
+En esta práctica, estudiaremos los valores anómalos desde el punto de vista univariante (se analiza cada variable por separado). Veremos en la Práctica 1 cómo utilizar el Análisis de Componentes Principales (PCA) para estudiar los valores anómalos desde el punto de vista multivariante.
+
+El resumen descriptivo de las variables categóricas (tablas de frecuencias anteriores) no mostró ningún valor inconsistente.
+
+A continuación se estudian gráficamente las variables numéricas. En primer lugar se realiza un gráfico de cajas y bigotes con todas las variables numéricas. Sin embargo, dado que cada una tiene rangos diferentes, se representan los datos en escala logarítmica para mitigar un poco dichas diferencias y poder visualizarlas mejor. Después, realizaremos gráficos individuales para algunas de las variables que más llaman nuestra atención en este gráfico de cajas y bigotes múltiple.
+
+
 
 <!-- Incluir resultados que muestren posibles anomalías detectadas e indicar cómo se han corregido. -->
 
