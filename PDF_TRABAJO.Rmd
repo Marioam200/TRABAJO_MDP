@@ -27,8 +27,6 @@ En nuestro caso se han registrado `r ncol(X10A_cristales)` variables para `r nro
 
 ## Analisis de Variables
 
-You can also embed plots, for example:
-
 ```{r pressure, echo=FALSE}
 dataFrame(`10B_cristales`)
 ```
