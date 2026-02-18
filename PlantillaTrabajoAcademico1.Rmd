@@ -1,24 +1,32 @@
 ---
 title: "Estudio sobre los Cristales"
-author: "Mario Álvarez Martínez, Jorge Aranda Honrubia, Pablo de Puelles Carceles, Julia Ruiz Picó,  Cristina Tarraga Herrero (Grupo A1-10)"
+author: "Mario Álvarez Martínez, Jorge Aranda Honrubia, 
+      Pablo de Puelles Carceles, Julia Ruiz Picó,  Cristina Tarraga Herrero (Grupo A1-10)"
 date: "`r Sys.Date()`"
 output: pdf_document
 ---
 
 
 ```{r setup, include=FALSE}
-knitr::opts_chunk$set(echo = FALSE, cache = FALSE, include = TRUE, warning = FALSE)
-library(tinytex)
+knitr::opts_chunk$set(echo = FALSE, cache = FALSE, include = TRUE, warning = FALSE, message = FALSE)
+
+# Función para cargar o instalar paquetes si faltan
+cargar_paquete <- function(paquete) {
+  if (!require(paquete, character.only = TRUE)) {
+    install.packages(paquete, repos = "[https://cran.rstudio.com/](https://cran.rstudio.com/)", lib = Sys.getenv("R_LIBS_USER"))
+    library(paquete, character.only = TRUE)
+  }
+}
+
+cargar_paquete("readr")
+cargar_paquete("tinytex")
 ```
 # Exploración y preparación de la BBDD  [3 páginas máximo]
 
 ```{r}
 
-data <- read.csv("~/Segundo/MDP 1/Práctica 1/10A_cristales.csv", row.names = 14, as.is = TRUE)
+data <- read_csv("10A_cristales.csv")
 View(data)
-
-# Empleo la columna 14 (identifcador) cono nombre de las filas. #
-
 ```
 
 
@@ -31,10 +39,9 @@ View(data)
 
 ```{r}
 descData = data.frame("variable" = colnames(data),
-                      "tipo" = c(rep("numerical", 11), rep("categorical", 2), rep("numerical", 2)
-                              
-                              ))
-                      
+                      "tipo" = c(rep("numerical", 11), 
+                                 rep("categorical", 2), 
+                                 rep("numerical", ncol(data) - 13)))
 rownames(descData) = descData$variable
 descData
 ```
@@ -51,32 +58,29 @@ Para las variables categóricas, obtendremos una tabla de frecuencias para compr
 
 ```{r}
 ## Numéricas
+# Filtramos para asegurar que solo usamos columnas que R reconoce como números
+vars_num <- descData$variable[descData$tipo == "numerical"]
+data_num <- data[, vars_num]
+# Forzamos que todo sea numérico por si acaso
+data_num <- as.data.frame(lapply(data_num, as.numeric))
 
-summary(data[,descData$variable[descData$tipo == "numerical"]])
+summary(data_num)
 
-# Variabilidad de las variables numéricas (desviación típica)
+# Variabilidad (desviación típica)
+mySD = apply(data_num, 2, sd, na.rm = TRUE)
 
-mySD = apply(data[,descData$variable[descData$tipo == "numerical"]], 2, sd)
-
-# Mejor calcular el coeficiente de variación porque no depende de las unidades o magnitud de las variables
-
-myMU = colMeans(data[,descData$variable[descData$tipo == "numerical"]])
-myCV = mySD/myMU
+# Coeficiente de variación
+myMU = colMeans(data_num, na.rm = TRUE)
+myCV = mySD / myMU
 sort(myCV)
 
 ## Categóricas
+vars_cat <- descData$variable[descData$tipo == "categorical"]
+apply(data[, vars_cat], 2, table, useNA = "ifany")
 
-# Tabla que muestra la distribución de las variables categóricas según sus diferentes valores. #
-
-apply(data[,descData$variable[descData$tipo == "categorical"]], 2, table, useNA = "i")
-
-# Tabla que muestra el porcentaje de observaciones para cada categoría de las variables categóricas. #
-
-apply(data[,descData$variable[descData$tipo == "categorical"]], 2,
+apply(data[, vars_cat], 2,
       function (x) round(100*table(x)/sum(table(x)), 2))
-
-
-````
+```
 
 Por ahora se decide no eliminar ninguna variable. 
 
