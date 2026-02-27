@@ -106,8 +106,76 @@ A continuación se estudian gráficamente las variables numéricas. En primer lu
 <!-- Incluir resultados que muestren posibles anomalías detectadas e indicar cómo se han corregido. -->
 
 <!-- Si se elimina alguna observación o variable, indicarlo claramente y justificarlo. -->
+# Transformación y recodificación de variables
+
+Antes de avanzar, es necesario revisar si nuestras variables necesitan algún ajuste para que el análisis sea más fluido. En este apartado evaluaremos si la composición química y las características cualitativas del cristal, como el color, están en el formato óptimo. Veremos si es mejor reagrupar algunas categorías pequeñas o crear variables binarias que nos ayuden a simplificar la información. No buscamos cambiar los datos por cambiar, sino adaptarlos para que la base de datos esté bien alineada con el foco de nuestro estudio y responda mejor cuando empecemos a clasificar los tipos de cristales.
+
+## Transformar variables categóricas a variables 0-1.
+
+Comenzaremos con la transformación de las variables categóricas para asegurar su compatibilidad con los modelos analíticos. Convertiremos las categorías de los tipos de colores o transparencia de los cristales en variables numéricas de 0 y 1. Esta recodificación es fundamental porque transformare la información cualitativa en datos cuantitativos que los algoritmos de clasificación o PCA puedan procesar eficientemente, permitiéndonos integrar todas las propiedades del cristal en un único conjunto de datos numérico.
+
+```{r}
+matriz_dummies <- model.matrix(~ 0 + color + tranparency, data = data)
+
+head(matriz_dummies)
+```
+
+Esta matriz la añadiremos como columnas nuevas a la base de datos para cada tipo de color y nivel de transparencia. En cada fila (cristal), se marcará con un '1' la columna que corresponda a su característica real, y con un '0' aquellas que no apliquen, permitiendo así que el modelo identifique sus propiedades cualitativas mediante valores numéricos.
+
+```{r}
+data_dummies <- as.data.frame(matriz_dummies)
+data_final <- cbind(data[, !(names(data) %in% c("color", "tranparency", "id"))], data_dummies)
+head(data_final)
+```
+Tras esta transformación, disponemos de una base de datos completamente numérica y mejor estructurada, garantizando la compatibilidad necesaria para aplicar con precisión técnicas avanzadas como PCA y clustering en los próximos análisis.
+
+## Reagrupar categorías poco frecuentes
+
+Tras analizar la distribución de la variable color, se ha observado que la mayoría de las observaciones se concentran en dos categorías principales, existiendo una tercera clase denominada 'Others' que agrupa eficientemente las tonalidades minoritarias. Dado que esta estructura ya garantiza que ninguna categoría tenga una frecuencia insignificante que pudiera desestabilizar los modelos matemáticos posteriores, se ha decidido mantener la variable tal como está, procediendo directamente a su transformación en variables dummy sin necesidad de realizar reagrupaciones adicionales.
+
+## Transformaciones para conseguir normalidad o simetría (Autoescalado)
+
+Con la base de datos ya convertida a un formato puramente numérico, el siguiente paso fundamental es la normalización (o estandarización) de las variables. Dado que características como el índice de refracción (RI) y el contenido de sodio (Na) tienen escalas y unidades de medida muy distintas, es crucial ajustar todas las variables para que tengan una media de cero y una desviación estándar de uno. Esto evita que las variables con valores numéricos más altos dominen artificialmente los cálculos de distancia, asegurando que técnicas como el PCA y el clustering ponderen correctamente la influencia de todas las propiedades del cristal, independientemente de su magnitud original.
+
+Para determinar el método de normalización más adecuado, realizaremos una comparación visual entre la distribución original de las variables numéricas y su comportamiento tras aplicar una transformación logarítmica. Mediante gráficos de densidad, evaluaremos qué enfoque corrige mejor la asimetría de los datos, asegurando que la estructura resultante sea óptima para los análisis multivariantes posteriores.
+```{r}
+plot(density(data$Na), main = "Densidad Na (Original)", 
+     col = "blue3", lwd = 2, xlab = "Contenido de Sodio")
 
 
+data$Na_log <- log2(data$Na)
+plot(density(data$Na_log), main = "Densidad Na (Transformada log2)", 
+     col = "red3", lwd = 2, xlab = "Log2(Na)")
+
+columnas_numericas <- c("RI", "Na", "Mg", "Al", "Si", "K", "Ca", "Ba", "Fe")
+data_normalizada <- data
+data_normalizada[columnas_numericas] <- scale(data[columnas_numericas])
+
+colMeans(data_normalizada[columnas_numericas])
+apply(data_normalizada[columnas_numericas], 2, sd)
+```
+La necesidad de estandarizar las variables mediante un Z-score (ajustando media a cero y desviación estándar a uno) radica en la disparidad de escalas y unidades de medida entre los componentes químicos del cristal. Este paso es crucial para evitar que variables con valores absolutos elevados dominen el análisis, garantizando que el PCA y el Clustering detecten patrones basados en la verdadera relevancia estadística de cada característica, no solo en su magnitud.
+
+```{r}
+# 1. Definir las columnas numéricas que se van a estandarizar
+
+columnas_a_escalar <- c("RI", "Na", "Mg", "Al", "Si", "K", "Ca", "Ba", "Fe", 
+                        "Type", "hardness", "density","thermal_exp",
+                        "colorCL", "colorOT", "colorWH",
+                        "tranparencyTL","tranparencyTP") 
+
+# 2. Aplicar el escalado (Z-score)
+data_final_escalada <- data_final
+data_final_escalada[columnas_a_escalar] <- scale(data_final[columnas_a_escalar])
+
+# 3. Comprobar resultados 
+
+print("Medias (deben ser casi 0):")
+print(round(colMeans(data_final_escalada[columnas_a_escalar]), 5))
+print("Desviaciones típicas (deben ser 1):")
+print(round(apply(data_final_escalada[columnas_a_escalar], 2, sd), 5))
+```
+Tras finalizar la estandarización de las variables, se ha verificado correctamente centrando y escaladno nuestras variables numeriacas obteniendo una media de cero y una desviación de uno. Este resultado confirma que la base de datos está perfectamente equilibrada y optimizada para las técnicas de PCA y clustering.
 
 # Análisis de Componentes Principales  [5 páginas máximo]
 
