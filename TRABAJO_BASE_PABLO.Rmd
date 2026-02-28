@@ -17,7 +17,8 @@ cargar_paquete <- function(paquete) {
     library(paquete, character.only = TRUE)
   }
 }
-
+install.packages("readr")
+install.packages("tinytex")
 cargar_paquete("readr")
 cargar_paquete("tinytex")
 ```
