@@ -23,11 +23,11 @@ cargar_paquete("tinytex")
 ```
 # Exploración y preparación de la BBDD  [3 páginas máximo]
 
-Nos encontramos ante una base de datos con registros de la composición, 
+Nos encontramos ante una base de datos que registra la composición, densidad, dureza y otras características físicas de un grupo de cristales. 
 
 ```{r}
 
-data <- read_csv("10A_cristales.csv")
+data <- read.csv("~/Segundo/MDP 1/Práctica 1/10A_cristales.csv", row.names = 14, as.is = TRUE)
 View(data)
 ```
 
@@ -54,11 +54,9 @@ length(descData)
 ## Variables constantes o casi constantes
 Queremos comprobar si existe alguna variable con variabilidad reducida o inexistente. Estas variables pueden considerarse constantes y por lo tanto no aportan información relevante para el análisis, por lo que deberían eliminarse. Sin embargo, ¿cómo puede evaluarse la variabilidad de una variable, y como se determina si esta es insuficiente?
 
-Para las variables numéricas, se calculará su desviación típica y se establecerá un valor mínimo para ella. 
+Para las variables numéricas, podría calcular su desviación típica y se establecerá un valor mínimo para ella, pero como esta depende de las unidades de medida y de la magnitud de la variable, por lo que se prefiere usar el coeficiente de variación.
 
-CComo la desviación típica depende de las unidades de medida y de la magnitud de la variable, es más aconsejable utilizar el coeficiente de variación.
-
-Para las variables categóricas, obtendremos una tabla de frecuencias para comprobar si toman distintos valores.
+Para las variables categóricas, ya que no es poible extraer un parámetro de la variabilidad, se obtendrán dos tablas de frecuencias (absolutas y relativas) y comprobar si una sola categoría contiene la mayoría o totalidad de los datos.
 
 
 ```{r}
@@ -87,7 +85,7 @@ apply(data[, vars_cat], 2,
       function (x) round(100*table(x)/sum(table(x)), 2))
 ```
 
-Por ahora se decide no eliminar ninguna variable. 
+Por ahora se decide no eliminar ninguna variable, ya que ninguna de ellas presenta un comportamiento constante o casi constante. Se considera que todas pueden aportar información valiosa al análisis. 
 
 
 
