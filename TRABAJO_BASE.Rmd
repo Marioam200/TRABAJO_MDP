@@ -25,8 +25,9 @@ cargar_paquete("tinytex")
 
 ```{r}
 
-data <- read_csv("10A_cristales.csv")
+data <- read.csv("~/Segundo/MDP 1/Práctica 1/10A_cristales.csv", row.names = 14, as.is = TRUE)
 View(data)
+
 ```
 
 Nos encontramos ante una base de datos que registra la composición, densidad, dureza y otras características físicas de un grupo de cristales. 
