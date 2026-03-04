@@ -1,6 +1,6 @@
 ---
 title: "Estudio sobre los Cristales"
-author: "Mario Álvarez Martínez, Jorge Aranda Honrubia, 
+author: "Mario Álvarez Martínez, Jorge Aranda Honrubia,\n 
       Pablo de Puelles Carceles, Julia Ruiz Picó,  Cristina Tarraga Herrero (Grupo A1-10)"
 date: "`r Sys.Date()`"
 output: pdf_document
@@ -25,7 +25,7 @@ cargar_paquete("tinytex")
 
 ```{r}
 
-data <- read.csv("~/Segundo/MDP 1/Práctica 1/10A_cristales.csv", row.names = 14, as.is = TRUE)
+data <- read.csv("10A_cristales.csv", row.names = 14, as.is = TRUE)
 View(data)
 
 ```
@@ -105,8 +105,16 @@ Por un lado, el estudio de los valores anómalos de las variables numéricas par
 Es por ello que, con el objetivo de representar todos los boxplots juntos y analizar la presencia de valores atípicos en términos relativos evitando distorsiones en el gráfico, estandarizamos previamente las variables haciendo uso de la función "scale".
 
 ```{r anomalos, echo = TRUE}
-par(mar = c(9,4,2,2))
-boxplot(scale(data[,descData$variable[descData$tipo == "numerical"]]), las = 2)
+# 1. Seleccionamos SOLO las columnas que son realmente números en el dataset 'data'
+# Esto evita depender de 'descData', que parece estar dando problemas
+data_solo_numeros <- data[, sapply(data, is.numeric)]
+
+# 2. Eliminamos columnas que tengan TODO valores NA (si las hay)
+data_solo_numeros <- data_solo_numeros[, colSums(!is.na(data_solo_numeros)) > 0]
+
+# 3. Graficamos con un control de margen para que se vean los nombres
+par(mar = c(9, 4, 2, 2))
+boxplot(scale(data_solo_numeros), las = 2, main = "Detección de Atípicos (Escalado)")
 ```
 
 De esta forma, a primera vista identificamos valores atípicos en la mayoría de las variables, siguiendo estas distribuciones asimétricas.
@@ -120,10 +128,10 @@ boxplot(data$K)
 table(data$K)
 ```
 
-A partir del histograma podemos deducir que la proporción relativa de potasio en los cristales se mueve entre valores de 0 y 3, por lo que interpretamos los dos valores extremos `r max(data_cristales$K)` como errores (valores inconsistentes) y los reemplazamos por valores faltantes (NA).
+A partir del histograma podemos deducir que la proporción relativa de potasio en los cristales se mueve entre valores de 0 y 3, por lo que interpretamos los dos valores extremos `r max(data$K)` como errores (valores inconsistentes) y los reemplazamos por valores faltantes (NA).
 
 ```{r, echo = TRUE}
-data_cristales[which(data$K > 3), "K"] = NA
+data[which(data$K > 3), "K"] = NA
 summary(data$K)
 table(data$K)
 ```
