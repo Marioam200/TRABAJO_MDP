@@ -40,7 +40,7 @@ Nos encontramos ante una base de datos que registra la composición, densidad, d
 
 
 ```{r}
-descData = data.frame(
+descData = data.frame("variable" = colnames(data),
                       "tipo" = c(rep("numerical", 11), 
                                  rep("categorical", 2), 
                                  rep("numerical", ncol(data) - 13)))
