@@ -20,12 +20,17 @@ cargar_paquete <- function(paquete) {
 
 cargar_paquete("readr")
 cargar_paquete("tinytex")
+cargar_paquete("dplyr")
 ```
 # Exploración y preparación de la BBDD  [3 páginas máximo]
 
 ```{r}
 
 data <- read.csv("10A_cristales.csv", row.names = 14, as.is = TRUE)
+
+
+data<- rename(data,  "transparency" = "tranparency")
+
 View(data)
 
 ```
@@ -86,6 +91,13 @@ apply(data[, vars_cat], 2,
 
 Por ahora se decide no eliminar ninguna variable, ya que ninguna de ellas presenta un comportamiento constante o casi constante. Se considera que todas pueden aportar información valiosa al análisis. 
 
+## Variable de significado desconocido 
+ Para la variable thermal_exp, no se conoce su significado concreto, por lo que se decide su eliminación. 
+ ````{r}
+data$thermal_exp <-NULL
+View(data)
+
+ ````
 
 
 
@@ -239,6 +251,7 @@ Tras finalizar la estandarización de las variables, se ha verificado correctame
 
 
 # Análisis de Componentes Principales  [5 páginas máximo]
+
 
 
 ## Tratamiento de los datos
