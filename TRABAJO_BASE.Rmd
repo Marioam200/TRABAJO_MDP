@@ -21,6 +21,9 @@ cargar_paquete <- function(paquete) {
 cargar_paquete("readr")
 cargar_paquete("tinytex")
 cargar_paquete("dplyr")
+library(PLSandO)
+library(knitr)
+library(gridExtra)
 ```
 # Exploración y preparación de la BBDD  [3 páginas máximo]
 
@@ -211,16 +214,20 @@ apply(data_normalizada[columnas_numericas], 2, sd)
 ```
 La necesidad de estandarizar las variables mediante un Z-score (ajustando media a cero y desviación estándar a uno) radica en la disparidad de escalas y unidades de medida entre los componentes químicos del cristal. Este paso es crucial para evitar que variables con valores absolutos elevados dominen el análisis, garantizando que el PCA y el Clustering detecten patrones basados en la verdadera relevancia estadística de cada característica, no solo en su magnitud.
 ```{r}
-setdiff(columnas_a_escalar, colnames(data_final))
+# 1. Definimos las columnas base (sin thermal_exp porque ya no existe)
+columnas_base <- c("RI", "Na", "Mg", "Al", "Si", "K", "Ca", "Ba", "Fe", 
+                   "Type", "hardness", "density")
+
+# 2. Identificamos automáticamente los nombres reales de las columnas dummy
+columnas_dummies <- grep("color|transparency", colnames(data_final), value = TRUE)
+
+# 3. Lista final filtrada: Solo columnas que REALMENTE existen en data_final
+columnas_a_escalar <- intersect(c(columnas_base, columnas_dummies), colnames(data_final))
+
+# Verificamos si falta alguna que esperábamos
+setdiff(c(columnas_base, columnas_dummies), colnames(data_final))
 ```
 ```{r}
-# 1. Definir las columnas numéricas que se van a estandarizar
-
-columnas_a_escalar <- c("RI", "Na", "Mg", "Al", "Si", "K", "Ca", "Ba", "Fe", 
-                        "Type", "hardness", "density","thermal_exp",
-                        "colorCL", "colorOT", "colorWH",
-                        "transparencyTL","transparencyTP") 
-
 # 2. Aplicar el escalado (Z-score)
 data_final_escalada <- data_final
 data_final_escalada[columnas_a_escalar] <- scale(data_final[columnas_a_escalar])
@@ -244,22 +251,89 @@ Tras finalizar la estandarización de las variables, se ha verificado correctame
 
 # Análisis de Componentes Principales  [5 páginas máximo]
 
+El Análisis de Componentes Principales se ha aplicado con el objetivo de reducir la dimensionalidad de la base de datos, permitiendo identificar las relaciones entre las variables físico-químicas y la estructura de agrupación de las muestras de cristal.
 
 
 ## Tratamiento de los datos
 
 <!-- Selección de variables a incluir en el modelo? Centrado y escalado? Transformación de variables? -->
+La fase previa al análisis multivariante ha consistido en un acondicionamiento riguroso de la base de datos para asegurar la estabilidad de los cálculos. En primer lugar, se ha llevado a cabo una criba técnica de las dimensiones disponibles, integrando en el estudio todas las variables físico-químicas a excepción de aquellas que, como thermal_exp o el identificador id, no aportan variabilidad o información relevante para la discriminación de las muestras. Este proceso garantiza que el modelo resultante se centre exclusivamente en los descriptores con capacidad analítica.
 
+En cuanto a la integridad de los datos, se ha aplicado una transformación específica sobre la variable Potasio (K) para gestionar las lecturas que presentaban inconsistencias manifiestas. Estos valores han sido sustituidos por datos faltantes (NA), una decisión que permite el uso del algoritmo NIPALS en fases posteriores para estimar las componentes de forma iterativa sin necesidad de descartar las muestras afectadas. De igual modo, las variables cualitativas se han codificado mediante variables dummy, permitiendo que la información sobre el color o la transparencia pueda ser procesada numéricamente por el modelo.
 
+Para finalizar el tratamiento, se ha aplicado un centrado y escalado estándar a la matriz de datos. Este paso es fundamental para neutralizar las diferencias de magnitud y unidades de medida entre las variables, como ocurre entre el Índice de Refracción y las concentraciones de elementos químicos. Al transformar cada variable para que presente media cero y desviación típica unitaria, se consigue que todas las propiedades del cristal tengan el mismo peso relativo en la construcción del espacio multidimensional, evitando que las variables con valores numéricos más elevados dominen artificialmente el análisis.
 ## Selección del número de componentes principales
+Para determinar la dimensionalidad óptima del modelo, se ha analizado el gráfico de sedimentación o Scree Plot (Figura X). En este gráfico se representa la varianza retenida por cada componente frente a la varianza media (marcada por la línea roja).
 
+Como se puede observar, existen cuatro componentes que se sitúan por encima o en el límite del criterio de Kaiser (varianza propia > 1). A partir de la cuarta componente, la curva muestra una pendiente mucho más suave, indicando que las dimensiones adicionales aportarían mayoritariamente ruido al modelo. Por tanto, se ha decidido retener estas cuatro dimensiones para el análisis.
+```{r}
+datos_pca <- data_final[columnas_a_escalar]
 
+# Como tenemos NA útilizo Nipals
+mipca <- pca(datos_pca, ncomp = NULL, algo = "nipals", scaling = "standard")
 
+pcaPlot(mipca, type = 'scree')
+```
+Esta decisión se ratifica mediante el análisis de la varianza acumulada (Tabla 1). La retención de cuatro componentes permite explicar un 83.49% de la información original, superando ampliamente el umbral del 80% que suele considerarse satisfactorio en estudios de caracterización química de materiales.
+```{r}
+mipca <- pca(datos_pca, ncomp = 4, algo = "nipals", scaling = "standard")
+
+kable(mipca$explVar[1:4,])
+
+```
+Para facilitar la interpretación del espacio multidimensional generado, se ha optado por una representación distribuida en dos bloques factoriales diferenciados. Inicialmente, la visualización conjunta de todas las dimensiones y etiquetas generaba una saturación de información que impedía distinguir los patrones y las identidades de las muestras. Para solucionar este problema técnico, se ha decidido dividir la representación en dos paneles independientes y aplicar un filtrado mediante el parámetro labelTop. Esta técnica permite que el software solo rotule de forma automática el 2% de las observaciones con mayor contribución, logrando que los gráficos respiren y que los nombres de los cristales más relevantes sean legibles sin solaparse entre sí.
+
+En el análisis del primer bloque, que comprende la primera y segunda componente principal y explica más de la mitad de la varianza total (56.64%), se observa que la primera dimensión actúa fundamentalmente como un eje de densidad y refracción. En este eje, el índice de refracción (RI) y el calcio (Ca) presentan las mayores cargas positivas, marcando la tendencia principal de la base de datos. Por su parte, la segunda componente establece una diferenciación química clara, donde el magnesio (Mg) se sitúa con una correlación positiva máxima en oposición directa al aluminio (Al) y al bario (Ba), permitiendo discriminar las muestras según estos aditivos.
+
+```{r}
+p1 = pcaPlot(mipca, type = 'scores', comp = 1:2, labels = TRUE, 
+             labelTop = 0.02, repel = TRUE)
+
+p2 = pcaPlot(mipca, type = 'corr', comp = 1:2, colBy = "contrib", 
+             labels = TRUE, repel = TRUE, col = "hot")
+grid.arrange(p1, p2 ,nrow = 2)
+```
+La proyección de las muestras en este primer plano revela la existencia de observaciones que se segregan de manera significativa del grupo central, destacando especialmente los individuos identificados como 107 y 108. Estas muestras presentan posiciones extremas en la dirección definida por el bario y el aluminio, lo que denota un perfil químico singular respecto al promedio y sugiere que podrían pertenecer a categorías de cristal con aplicaciones industriales específicas que requieren propiedades ópticas o estructurales diferenciadas.
+
+El estudio del segundo bloque, correspondiente a la tercera y cuarta componente principal, justifica la decisión de ampliar la dimensionalidad del modelo, ya que estas dimensiones revelan la variabilidad de los elementos minoritarios que queda oculta en los ejes mayoritarios. En este plano, que aporta un 26.85% de varianza adicional, la tercera componente se encuentra condicionada casi en su totalidad por las variaciones del potasio (K), mientras que la cuarta componente captura la variabilidad específica del hierro (Fe).
+
+```{r}
+p3 = pcaPlot(mipca, type = 'scores', comp = 3:4, labels = TRUE, 
+             labelTop = 0.02, repel = TRUE)
+
+p4 = pcaPlot(mipca, type = 'corr', comp = 3:4, colBy = "contrib", 
+             labels = TRUE, repel = TRUE, col = "hot")
+
+# Organizamos los 4 gráficos en una rejilla
+grid.arrange(p3, p4, nrow = 2)
+
+```
+En esta proyección emergen muestras como la 185 y la 202, que no resultaban especialmente llamativas en el análisis de las primeras componentes. Su aparición como puntos aislados en este segundo plano se debe a concentraciones atípicas de potasio y hierro respectivamente, lo que demuestra que la estrategia de dividir el análisis en bloques y utilizar un etiquetado selectivo es necesaria para detectar matices químicos críticos que, de otro modo, quedarían enmascarados por la densidad de los datos.
 
 ## Validación del modelo
 
 <!-- Detección de valores anómalos y decisiones tomadas a partir de los mismos. -->
+Comenzaremos con la deteccion de anomalos moderados utilizando scr 
 
+```{r}
+par(mfrow = c(1,2))
+anomSCR95 = pcaOutliers(mipca, method = "RSS", conf = 95)
+anomSCR99 = pcaOutliers(mipca, method = "RSS", conf = 99)
+```
+```{r}
+
+moderados = sort(anomSCR95$RSS[anomSCR95$ModerateOutliers], decreasing = TRUE)
+print("Cristales moderados detectados:")
+print(moderados)
+```
+Vemos que falla id108, id107, id 112
+```{r}
+par(mfrow = c(1,3))
+outlierContrib(mipca, outliers = anomSCR95, specificObs = names(moderados[1:3]))
+```
+```{r}
+
+```
 
 ## Interpretación del modelo
 
@@ -267,7 +341,9 @@ Tras finalizar la estandarización de las variables, se ha verificado correctame
 
 
 ## Conclusiones
+Tras la ejecución y validación del modelo, se concluye que la variabilidad química y física de la base de datos de cristales puede sintetizarse eficazmente en cuatro dimensiones principales. La estructura obtenida demuestra que el Índice de Refracción y el Calcio son los factores determinantes de la varianza mayoritaria, mientras que elementos como el Magnesio y el Bario actúan como los principales diferenciadores entre tipos de vidrio.
 
+Una conclusión crítica de este análisis es la relevancia de los componentes minoritarios. De no haber retenido la tercera y cuarta componente, la influencia del Potasio y el Hierro habría quedado enmascarada, impidiendo la detección de muestras singulares como la 185 y la 202. Por tanto, el modelo no solo permite una reducción de la dimensionalidad, sino que actúa como una herramienta de pre-clasificación que segrega perfiles químicos específicos. Estos hallazgos establecen una base sólida para las posteriores fases de agrupación (clustering), donde se espera que estas relaciones químicas definan la formación de clústeres bien diferenciados según el uso o procedencia del cristal.
 
 
 
