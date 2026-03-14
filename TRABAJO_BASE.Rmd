@@ -1,30 +1,20 @@
 ---
 title: "Estudio sobre los Cristales"
-author: "Mario Álvarez Martínez, Jorge Aranda Honrubia,\n 
-      Pablo de Puelles Carceles, Julia Ruiz Picó,  Cristina Tarraga Herrero (Grupo A1-10)"
+author: "Mario Álvarez Martínez, Jorge Aranda Honrubia, Pablo de Puelles Carceles, \\and Julia Ruiz Picó, Cristina Tarraga Herrero (Grupo A1-10)"
 date: "`r Sys.Date()`"
 output: pdf_document
 ---
-
-
 ```{r setup, include=FALSE}
-knitr::opts_chunk$set(echo = FALSE, cache = FALSE, include = TRUE, warning = FALSE, message = FALSE)
+knitr::opts_chunk$set(echo = FALSE, cache = FALSE, include = TRUE, warning = FALSE, message = FALSE, comment = "")
 
-# Función para cargar o instalar paquetes si faltan
-cargar_paquete <- function(paquete) {
-  if (!require(paquete, character.only = TRUE)) {
-    install.packages(paquete, repos = "[https://cran.rstudio.com/](https://cran.rstudio.com/)", lib = Sys.getenv("R_LIBS_USER"))
-    library(paquete, character.only = TRUE)
-  }
-}
-
-cargar_paquete("readr")
-cargar_paquete("tinytex")
-cargar_paquete("dplyr")
-library(PLSandO)
+# Carga directa de librerías (Sin textos de instalación)
+library(readr)
+library(dplyr)
 library(knitr)
 library(gridExtra)
+library(PLSandO)
 ```
+
 # Exploración y preparación de la BBDD  [3 páginas máximo]
 
 ```{r}
@@ -32,7 +22,6 @@ data <- read.csv("10A_cristales.csv", row.names = 14, as.is = TRUE)
 data<- rename(data,  "transparency" = "tranparency")
 View(data)
 ```
-
 Nos encontramos ante una base de datos que registra la composición, densidad, dureza y otras características físicas de un grupo de cristales. 
 
 ## Descripción y naturaleza de las variables

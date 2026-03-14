@@ -20,7 +20,9 @@ cargar_paquete <- function(paquete) {
 
 cargar_paquete("readr")
 cargar_paquete("tinytex")
+cargar_paquete("dplyr")
 library(PLSandO)
+library(knitr)
 library(gridExtra)
 ```
 # Exploración y preparación de la BBDD  [3 páginas máximo]
