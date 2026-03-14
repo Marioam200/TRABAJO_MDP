@@ -187,6 +187,9 @@ Tras finalizar la estandarización de las variables, se ha verificado correctame
 
 ## Selección del número de componentes principales
 
+Voy a comenzar con la selección de componenetes principales. 
+
+
 
 
 

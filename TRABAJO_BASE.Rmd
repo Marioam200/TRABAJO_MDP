@@ -25,14 +25,9 @@ cargar_paquete("dplyr")
 # Exploración y preparación de la BBDD  [3 páginas máximo]
 
 ```{r}
-
 data <- read.csv("10A_cristales.csv", row.names = 14, as.is = TRUE)
-
-
 data<- rename(data,  "transparency" = "tranparency")
-
 View(data)
-
 ```
 
 Nos encontramos ante una base de datos que registra la composición, densidad, dureza y otras características físicas de un grupo de cristales. 
@@ -92,17 +87,12 @@ apply(data[, vars_cat], 2,
 Por ahora se decide no eliminar ninguna variable, ya que ninguna de ellas presenta un comportamiento constante o casi constante. Se considera que todas pueden aportar información valiosa al análisis. 
 
 ## Variable de significado desconocido 
- Para la variable thermal_exp, no se conoce su significado concreto, por lo que se decide su eliminación. 
- ````{r}
+Para la variable thermal_exp, no se conoce su significado concreto, por lo que se decide su eliminación. 
+````{r}
 data$thermal_exp <-NULL
 View(data)
 
- ````
-
-
-
-
-
+````
 ## Análisis descriptivo
 
 
@@ -116,7 +106,7 @@ Por un lado, el estudio de los valores anómalos de las variables numéricas par
 
 Es por ello que, con el objetivo de representar todos los boxplots juntos y analizar la presencia de valores atípicos en términos relativos evitando distorsiones en el gráfico, estandarizamos previamente las variables haciendo uso de la función "scale".
 
-```{r anomalos, echo = TRUE}
+```{r anomalos}
 # 1. Seleccionamos SOLO las columnas que son realmente números en el dataset 'data'
 # Esto evita depender de 'descData', que parece estar dando problemas
 data_solo_numeros <- data[, sapply(data, is.numeric)]
@@ -142,7 +132,7 @@ table(data$K)
 
 A partir del histograma podemos deducir que la proporción relativa de potasio en los cristales se mueve entre valores de 0 y 3, por lo que interpretamos los dos valores extremos `r max(data$K)` como errores (valores inconsistentes) y los reemplazamos por valores faltantes (NA).
 
-```{r, echo = TRUE}
+```{r}
 data[which(data$K > 3), "K"] = NA
 summary(data$K)
 table(data$K)
@@ -164,7 +154,7 @@ Para el análisis de las variables categóricas, optamos por un resumen descript
 barplot(table(data$color))
 
 ## Tranparency (por ser discreta con pocos valores diferentes, utilizaremos un gráfico de barras)
-barplot(table(data$tranparency))
+barplot(table(data$transparency))
 ```
 
 No identificamos ningún valor inconsistente en los datos de color y transparencia de los cristales.
@@ -180,7 +170,7 @@ Antes de avanzar, es necesario revisar si nuestras variables necesitan algún aj
 Comenzaremos con la transformación de las variables categóricas para asegurar su compatibilidad con los modelos analíticos. Convertiremos las categorías de los tipos de colores o transparencia de los cristales en variables numéricas de 0 y 1. Esta recodificación es fundamental porque transformare la información cualitativa en datos cuantitativos que los algoritmos de clasificación o PCA puedan procesar eficientemente, permitiéndonos integrar todas las propiedades del cristal en un único conjunto de datos numérico.
 
 ```{r}
-matriz_dummies <- model.matrix(~ 0 + color + tranparency, data = data)
+matriz_dummies <- model.matrix(~ 0 + color + transparency, data = data)
 
 head(matriz_dummies)
 ```
@@ -189,7 +179,7 @@ Esta matriz la añadiremos como columnas nuevas a la base de datos para cada tip
 
 ```{r}
 data_dummies <- as.data.frame(matriz_dummies)
-data_final <- cbind(data[, !(names(data) %in% c("color", "tranparency", "id"))], data_dummies)
+data_final <- cbind(data[, !(names(data) %in% c("color", "transparency", "id"))], data_dummies)
 head(data_final)
 ```
 Tras esta transformación, disponemos de una base de datos completamente numérica y mejor estructurada, garantizando la compatibilidad necesaria para aplicar con precisión técnicas avanzadas como PCA y clustering en los próximos análisis.
@@ -220,14 +210,16 @@ colMeans(data_normalizada[columnas_numericas])
 apply(data_normalizada[columnas_numericas], 2, sd)
 ```
 La necesidad de estandarizar las variables mediante un Z-score (ajustando media a cero y desviación estándar a uno) radica en la disparidad de escalas y unidades de medida entre los componentes químicos del cristal. Este paso es crucial para evitar que variables con valores absolutos elevados dominen el análisis, garantizando que el PCA y el Clustering detecten patrones basados en la verdadera relevancia estadística de cada característica, no solo en su magnitud.
-
+```{r}
+setdiff(columnas_a_escalar, colnames(data_final))
+```
 ```{r}
 # 1. Definir las columnas numéricas que se van a estandarizar
 
 columnas_a_escalar <- c("RI", "Na", "Mg", "Al", "Si", "K", "Ca", "Ba", "Fe", 
                         "Type", "hardness", "density","thermal_exp",
                         "colorCL", "colorOT", "colorWH",
-                        "tranparencyTL","tranparencyTP") 
+                        "transparencyTL","transparencyTP") 
 
 # 2. Aplicar el escalado (Z-score)
 data_final_escalada <- data_final
