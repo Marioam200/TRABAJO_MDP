@@ -178,3 +178,43 @@ No identificamos ningún valor inconsistente en los datos de color y transparenc
 
 # Análisis Factorial de Correspondencias  [OPCIONAL. 2 páginas máximo]
 
+El AFC es un método descriptivo que nos permite analizar las relaciones entre las variables categóricas presentes en nuestra base de datos, representándolas en un espacio más reducido.
+
+Para aplicar el AFC Simple, es necesario contar con 2 factores que presenten un elevado número de categorías, lo que no se da en nuestro caso.
+
+Es por ello que optamos por aplicar el AFC múltiple sobre las 4 variables categóricas con las que contamos: 
+
+- hardness: codificada en una escala ordinal tipo Mohs, donde 1 indica menor dureza y 7 mayor dureza.
+- color: color del cristal (CL: transparente; WH: blanco; OT: otros colores).
+- transparency: nivel de transparencia del cristal (TP: transparente; TL: translúcido; OP: opaco).
+- type: tipo de cristal según su uso (1: ventanas de edificios con vidrio flotado; 2: ventanas de edificios sin vidrio flotado; 3: ventanas de vehículos con vidrio flotado; 4: envases y artículos de mesa; 5: faros).
+
+
+```{r setup, message=FALSE}
+knitr::opts_chunk$set(echo = TRUE, cache = TRUE)
+library(knitr)
+library(FactoMineR)
+library(factoextra)
+library(corrplot)
+library(gridExtra)
+```
+
+
+```{r}
+data2 = data[, c("type", "hardness", "color", "transparency")]
+View(data2)
+
+# Tratar todas las variables como categóricas, para evitar errores con los ordinales de hardness y type
+
+data2[] <- lapply(data2, as.factor)
+```
+
+
+```{r mca2, fig.width=5, fig.height=5}
+res.mca <- MCA(data2, graph = FALSE)
+eig.val <- get_eigenvalue(res.mca)
+Vmedia = 100 * (1/nrow(eig.val))
+fviz_eig(res.mca, addlabels = TRUE) +
+  geom_hline(yintercept=Vmedia, linetype=2, color="red")
+kable(head(eig.val))
+```
