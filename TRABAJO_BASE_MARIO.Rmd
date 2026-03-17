@@ -20,6 +20,10 @@ cargar_paquete <- function(paquete) {
 
 cargar_paquete("readr")
 cargar_paquete("tinytex")
+cargar_paquete("dplyr")
+library(PLSandO)
+library(knitr)
+library(gridExtra)
 ```
 # Exploración y preparación de la BBDD  [3 páginas máximo]
 
@@ -179,13 +183,24 @@ Tras finalizar la estandarización de las variables, se ha verificado correctame
 
 # Análisis de Componentes Principales  [5 páginas máximo]
 
-
+Voy a comenzar con el analisis de componenetes pricipales.
 ## Tratamiento de los datos
+```{r}
+datos_pca <- data_final[columnas_a_escalar]
+
+# Como tenemos NA útilizo Nipals
+mipca <- pca(datos_pca, ncomp = NULL, algo = "nipals", scaling = "standard")
+
+pcaPlot(mipca, type = 'scree')
+````
 
 <!-- Selección de variables a incluir en el modelo? Centrado y escalado? Transformación de variables? -->
 
 
 ## Selección del número de componentes principales
+
+
+
 
 
 
