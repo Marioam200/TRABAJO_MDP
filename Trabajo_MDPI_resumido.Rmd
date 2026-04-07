@@ -1,0 +1,232 @@
+---
+title: "Estudio sobre los Cristales"
+author: "Mario Álvarez Martínez, Jorge Aranda Honrubia, Pablo de Puelles Carceles,
+  \\and Julia Ruiz Picó, Cristina Tarraga Herrero (Grupo A1-10)"
+date: "`r Sys.Date()`"
+output:
+  word_document: default
+  pdf_document: default
+---
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE, cache = FALSE, include = TRUE, warning = FALSE, message = FALSE, comment = "")
+
+# Carga directa de librerías (Sin textos de instalación)
+library(readr)
+library(dplyr)
+library(knitr)
+library(gridExtra)
+library(PLSandO)
+```
+
+# Exploración y preparación de la BBDD  [3 páginas máximo]
+## Descripción y naturaleza de las variables
+
+```{r}
+
+# la columna 14 (identificador del cristal) pasa a dar nombre a las filas
+data <- read.csv("10A_cristales.csv", row.names = 14, as.is = TRUE)
+
+# se renombra la variable "transparency" por una errata en la base de datos y "type" para conseguir coherencia de los nombres en minúscula
+data<- rename(data, "transparency" = "tranparency")
+data<- rename(data, "type" = "Type")
+
+View(data)
+
+descData = data.frame("variable" = colnames(data),
+                      "tipo" = c(rep("numerical", 11), 
+                                 rep("categorical", 2), 
+                                 rep("numerical", ncol(data) - 13)))
+rownames(descData) = colnames(data)
+descData
+```
+Nos encontramos ante una base de datos que registra información sobre distintos cristales. La base original procede del conjunto de datos Glass del paquete mlbench de R.
+
+Inicialmente, se han registrado `r ncol(data)` variables para `r nrow(data)` muestras de cristales.
+
+La base de datos recoge 8 variables referidas a la composición química de las muestras, representadas como las proporciones relativas de los distintos elementos químicos presentes en el cristal.
+
+También se incluyen parámetros físicos, tales como el índice de refracción (RI), la densidad y la dureza del cristal, medida esta última en una escala ordinal tipo Mohs, donde 1 indica menor dureza y 7 mayor dureza.
+
+Además, presenta 3 variables categóricas, la primera de ellas recodificada a numérica:
+
+- type: tipo de cristal según su uso (1: ventanas de edificios con vidrio flotado; 2: ventanas de edificios sin vidrio flotado; 3: ventanas de vehículos con vidrio flotado; 4: envases y artículos de mesa; 5: faros).
+- color: indica el color del cristal (CL: transparente; WH: blanco; OT: otros colores).
+- transparency: indica el nivel de transparencia del cristal (TP: transparente; TL: translúcido; OP: opaco).
+
+Por último, detectamos la variable thermal_exp. Como no se conoce su significado concreto, se decide su eliminación, altualizando por tanto la tabla de clasificación de las variables.
+
+````{r}
+data$thermal_exp <-NULL
+View(data)
+
+descData <- descData[-15,] # se elimina la fila 15 (thermal_exp)
+````
+
+## Análisis descriptivo
+### Variables constantes o casi constantes
+
+Queremos comprobar si existe alguna variable con variabilidad reducida o inexistente.
+
+Para las variables numéricas se opta por utilizar el coeficiente de variación, mientras que para las variables categóricas se obtendrán dos tablas de frecuencias (absolutas y relativas) y se comprobará si una sola categoría contiene la mayoría o totalidad de los datos.
+
+
+```{r, results = 'hide'}
+## Numéricas
+# Filtramos para asegurar que solo usamos columnas que R reconoce como números
+vars_num <- descData$variable[descData$tipo == "numerical"]
+data_num <- data[, vars_num]
+# Forzamos que todo sea numérico por si acaso
+data_num <- as.data.frame(lapply(data_num, as.numeric))
+
+summary(data_num)
+
+# Variabilidad (desviación típica)
+mySD = apply(data_num, 2, sd, na.rm = TRUE)
+
+# Coeficiente de variación
+myMU = colMeans(data_num, na.rm = TRUE)
+myCV = mySD / myMU
+sort(myCV)
+
+## Categóricas
+vars_cat <- descData$variable[descData$tipo == "categorical"]
+apply(data[, vars_cat], 2, table, useNA = "ifany")
+
+apply(data[, vars_cat], 2,
+      function (x) round(100*table(x)/sum(table(x)), 2))
+```
+
+Por ahora se decide no eliminar ninguna variable, ya que ninguna de ellas presenta un comportamiento constante o casi constante. Se considera que todas pueden aportar información valiosa al análisis. 
+
+### Valores inconsistentes o anómalos
+
+A continuación se analiza si alguna de las variables presenta valores que no son posibles dentro del rango de definición de la variable. 
+
+Por un lado, el estudio de los valores anómalos de las variables numéricas parte de la representación de cada una de ellas en un diagrama de caja y bigotes, aplicando la función scale para analizar los valores en términos relativos.
+
+
+```{r anomalos}
+# 1. Seleccionamos SOLO las columnas que son realmente números en el dataset 'data'
+# Esto evita depender de 'descData', que parece estar dando problemas
+data_solo_numeros <- data[, sapply(data, is.numeric)]
+
+# 2. Eliminamos columnas que tengan TODO valores NA (si las hay)
+data_solo_numeros <- data_solo_numeros[, colSums(!is.na(data_solo_numeros)) > 0]
+
+# 3. Graficamos con un control de margen para que se vean los nombres
+par(mar = c(9, 4, 2, 2))
+boxplot(scale(data_solo_numeros), las = 2, main = "Detección de Atípicos (Escalado)")
+```
+
+Destacan valores extremos en las variables K y Ba.
+
+```{r, results='hide'}
+par(mfrow=c(1,2))
+hist(data$K, 50)
+boxplot(data$K)
+table(data$K)
+```
+
+La proporción relativa de potasio en los cristales se mueve entre valores de 0 y 3, por lo que interpretamos los dos valores extremos `r max(data$K)` como errores y los reemplazamos por valores faltantes (NA).
+
+```{r, results= 'hide'}
+data[which(data$K > 3), "K"] = NA
+summary(data$K)
+table(data$K)
+```
+
+El bario es un elemento presente en los cristales en proporción muy dispar, según la asimetría de la distribución. Mantenemos los valores anómalos, como reflejo del comportamiento real de la variable.
+
+```{r, results='hide', fig.show = 'hide'}
+par(mfrow=c(1,2))
+hist(data$Ba, 50)
+boxplot(data$Ba)
+table(data$K)
+```
+No identificamos ningún valor inconsistente en los datos de color y transparencia de los cristales, a partir de los gráficos de barras.
+
+```{r, fig.show = 'hide'}
+## Color (por ser discreta con pocos valores diferentes, utilizaremos un gráfico de barras)
+barplot(table(data$color))
+
+## Tranparency (por ser discreta con pocos valores diferentes, utilizaremos un gráfico de barras)
+barplot(table(data$transparency))
+```
+
+### Valores faltantes
+Los únicos valores faltantes presentes en la base de datos son los dos NA forzados en la variable K por la presencia de anómalos.
+
+### Transformación y recodificación de variables
+
+Antes de avanzar, es necesario revisar si nuestras variables necesitan algún ajuste para que el análisis sea más fluido. 
+
+#### Transformar variables categóricas a variables 0-1.
+
+Comenzaremos con la transformación de las variables categóricas (color y transparency) a dummies (0-1) para asegurar su compatibilidad con los modelos analíticos, como PCA.
+
+```{r, results='hide'}
+matriz_dummies <- model.matrix(~ 0 + color + transparency, data = data)
+
+head(matriz_dummies)
+```
+
+```{r}
+data_dummies <- as.data.frame(matriz_dummies)
+data_final <- cbind(data[, !(names(data) %in% c("color", "transparency", "id"))], data_dummies)
+head(data_final)
+```
+
+
+#### Transformaciones para conseguir normalidad o simetría (Autoescalado)
+
+Dado que las variables tienen escalas y unidades muy distintas, como el índice de refracción (RI) y el contenido de sodio (Na), es crucial ajustar todas las variables para que tengan una media de cero y una desviación típica de uno. Esto evita que las variables con valores numéricos más altos dominen el análisis en técnicas como el PCA.
+
+Para determinar el método de normalización más adecuado, realizaremos una comparación visual entre la distribución original de las variables numéricas y su comportamiento tras aplicar una transformación logarítmica.
+
+```{r, results='hide'}
+plot(density(data$Fe), main = "Densidad Fe (Original)", 
+     col = "blue3", lwd = 2, xlab = "Contenido de Hierro")
+
+
+data$Fe_log <- log2(data$Fe)
+plot(density(data$Fe_log), main = "Densidad Fe (Transformada log2)", 
+     col = "red3", lwd = 2, xlab = "Log2(Fe)")
+
+columnas_numericas <- c("RI", "Na", "Mg", "Al", "Si", "K", "Ca", "Ba", "Fe")
+data_normalizada <- data
+data_normalizada[columnas_numericas] <- scale(data[columnas_numericas])
+
+colMeans(data_normalizada[columnas_numericas])
+apply(data_normalizada[columnas_numericas], 2, sd)
+```
+Como la transformación logarítmica sí "endereza" la distribución, la aplicamos a las variables numéricas antes de estandarizar haciendo uso de Z-score.
+
+```{r, results='hide'}
+# 1. Definimos las columnas base (sin thermal_exp porque ya no existe)
+columnas_base <- c("RI", "Na", "Mg", "Al", "Si", "K", "Ca", "Ba", "Fe", 
+                   "Type", "hardness", "density")
+
+# 2. Identificamos automáticamente los nombres reales de las columnas dummy
+columnas_dummies <- grep("color|transparency", colnames(data_final), value = TRUE)
+
+# 3. Lista final filtrada: Solo columnas que REALMENTE existen en data_final
+columnas_a_escalar <- intersect(c(columnas_base, columnas_dummies), colnames(data_final))
+
+# Verificamos si falta alguna que esperábamos
+setdiff(c(columnas_base, columnas_dummies), colnames(data_final))
+```
+
+
+```{r, results='hide'}
+# 2. Aplicar el escalado (Z-score)
+data_final_escalada <- data_final
+data_final_escalada[columnas_a_escalar] <- scale(data_final[columnas_a_escalar])
+
+# 3. Comprobar resultados 
+
+print("Medias (deben ser casi 0):")
+print(round(colMeans(data_final_escalada[columnas_a_escalar]), 5))
+print("Desviaciones típicas (deben ser 1):")
+print(round(apply(data_final_escalada[columnas_a_escalar], 2, sd), 5))
+```
+
