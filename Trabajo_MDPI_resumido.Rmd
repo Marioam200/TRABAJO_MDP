@@ -18,7 +18,7 @@ library(gridExtra)
 library(PLSandO)
 ```
 
-# Exploración y preparación de la BBDD  [3 páginas máximo]
+# Exploración y preparación de la BBDD
 ## Descripción y naturaleza de las variables
 
 ```{r}
@@ -230,3 +230,100 @@ print("Desviaciones típicas (deben ser 1):")
 print(round(apply(data_final_escalada[columnas_a_escalar], 2, sd), 5))
 ```
 
+# Análisis Factorial de Correspondencias
+
+Para aplicar el AFC Simple, es necesario contar con 2 factores que presenten un elevado número de categorías, lo que no se da en nuestro caso. Es por ello que optamos por aplicar el AFC múltiple sobre las 4 variables categóricas con las que contamos, representándolas en un espacio más reducido. Las variables (hardness, color, transparency y type) quedan descritas en profundidad en la exploración inicial de la base de datos.
+
+
+```{r, results='hide'}
+colnames(data)
+data2 = data[, c("type", "hardness", "color", "transparency")]
+View(data2)
+
+# Tratar todas las variables como categóricas, para evitar errores con los ordinales de hardness y type
+
+data2[] <- lapply(data2, as.factor)
+```
+
+## Número de dimensiones y modelo inicial
+
+Generando un modelo AFC múltiple obtenemos un Scree Plot con 7 componentes cuya inercia representada supera la media total. No obstante, aplicamos el Elbow Method para seleccionar las tres primeras, pues resulta más apropiado para nuestro estudio. Queda explicada el 35% de la inercia total.
+
+```{r mca2, fig.width=5, fig.height=5}
+res.mca <- MCA(data2, graph = FALSE)
+eig.val <- get_eigenvalue(res.mca)
+Vmedia = 100 * (1/nrow(eig.val))
+fviz_eig(res.mca, addlabels = TRUE) +
+  geom_hline(yintercept=Vmedia, linetype=2, linewidth = 1.2, color="red")
+# kable(head(eig.val))
+```
+
+## Interpretación del modelo
+
+A continuación, se estudia la contribución de las variables a la formación de las componentes y la relación de las variables entre sí.
+
+```{r}
+res.mca <- MCA(data2, graph = FALSE, ncp = 3)
+# Correlación variables-componentes
+fviz_mca_var(res.mca, choice = "mca.cor", 
+             repel = TRUE, axes = 1:2,
+             ggtheme = theme_minimal())
+
+#Este gráfico no aportaba nada relevante
+#fviz_mca_var(res.mca, choice = "mca.cor", 
+             #repel = TRUE, axes = 2:3,
+             #ggtheme = theme_minimal())
+
+
+# Todas las dimensiones
+corrplot(res.mca$var$cos2, is.corr = FALSE, 
+         tl.col = 1, win.asp = 0.5, 
+         cl.ratio = 0.3, cl.cex = 0.8)
+```
+
+La dimensión 1 está principalmente asociada al color, concretamente a los cristales clasificados como Other y CL tranparente, y a la categoría de transparencia opaca. 
+
+Respecto a la segunda componente, tiene contribuyentes menos intensos, destacando los niveles de transparencia TL y TP, la categoría 4 de tipo, y, de forma menos relevante, los niveles 2, 6 y 7 de dureza. 
+
+Por último, en la componente 3, destacan el tipo 3 (ventanas de vehículos con vidrio flotado), el nivel de dureza 7 y el color WH.
+
+De los gráficos podemos deducir que el uso que se le da a un cristal está vinculado al nivel de transparencia del mismo, y que el color del cristal no se relaciona con su dureza. No obstante, para conocer mejor estas relaciones, se obtienen los siguientes gráficos.
+
+## Gráficos de variables y observaciones
+
+```{r}
+# Dimensiones 1 y 2
+fviz_mca_var(res.mca, col.var="steelblue", shape.var = 15, 
+             repel = TRUE, axes = 1:2, labelsize = 3)
+
+# Dimensiones 3 
+# fviz_mca_var(res.mca, col.var="steelblue", shape.var = 15, 
+             # repel = TRUE, axes = 2:3, labelsize = 3)
+
+
+```
+
+Del gráfico de variables deducimos que existen diferencias significativas entre los tipos de cristal 4 y 5 (empleados para la fabricación envases y artículos de mesa, y en faros, respectivamente), lo que es lógico, mientras que los de tipo 1 y 2, ambos empleados en ventanas de edificios, sí tienen propiedade similares, sobre todo en cuanto al nivel de dureza y el color transparente. 
+
+Por otro lado, los niveles de dureza 2 y 7 están desvinculados del resto, entre los que sí existe una relación.
+
+
+```{r}
+p1 = fviz_mca_ind(res.mca, axes = c(1,2),
+             label = "none",
+             habillage = "type",
+             palette = c("#00AFBB", "#E7B800", "#FC4E07", "#868686", "#C77CFF"),
+             addEllipses = TRUE,
+             ellipse.type = "confidence",
+             ggtheme = theme_minimal())
+
+p2 = fviz_mca_ind(res.mca, axes = c(2,3),
+             label = "none",
+             col.ind = data$transparency,
+             ggtheme = theme_minimal())
+
+grid.arrange(p1, p2, nrow = 1)
+
+```
+
+El gráfico de "type" reafirma lo comentado respecto a los tipos de cristal, al solaparse los tipos 1 y 2, y diferenciarse completamente el 4 y 5. Y, al representar el nivel de transparencia en el gráfico de la derecha, podemos afirmar que los cristales transparentes suelen emplearse en los usos 1 y 2, es decir, en ventanas de edificios.
