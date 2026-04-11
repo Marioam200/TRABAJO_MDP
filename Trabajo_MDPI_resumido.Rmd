@@ -16,6 +16,9 @@ library(dplyr)
 library(knitr)
 library(gridExtra)
 library(PLSandO)
+library(FactoMineR)
+library(factoextra)
+library(corrplot)
 ```
 
 # Exploración y preparación de la BBDD
