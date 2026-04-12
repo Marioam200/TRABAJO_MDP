@@ -314,7 +314,7 @@ Por otro lado, los niveles de dureza 2 y 7 están desvinculados del resto, entre
 ```{r}
 p1 = fviz_mca_ind(res.mca, axes = c(1,2),
              label = "none",
-             habillage = "type",
+             habillage = "color",
              palette = c("#00AFBB", "#E7B800", "#FC4E07", "#868686", "#C77CFF"),
              addEllipses = TRUE,
              ellipse.type = "confidence",
@@ -329,4 +329,6 @@ grid.arrange(p1, p2, nrow = 1)
 
 ```
 
-El gráfico de "type" reafirma lo comentado respecto a los tipos de cristal, al solaparse los tipos 1 y 2, y diferenciarse completamente el 4 y 5. Y, al representar el nivel de transparencia en el gráfico de la derecha, podemos afirmar que los cristales transparentes suelen emplearse en los usos 1 y 2, es decir, en ventanas de edificios.
+El gráfico de "color" reafirma lo comentado respecto a la contribución de los colores transparente, blanco y others a la primera componente, quedando representados de forma diferenciada de izquierda a derecha.
+
+El gráfico de de individuos de la derecha permite observar la relación entre la segunda componente y el nivel de transparencia, quedando especialmente bien representada la distinción entre los cristales TL translúcidos y los TP transparentes. Sin embargo, la tercera componente no tiene esta variable como contribuyente.
