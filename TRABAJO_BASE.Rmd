@@ -18,7 +18,7 @@ library(PLSandO)
 # Exploración y preparación de la BBDD  [3 páginas máximo]
 
 ```{r}
-data <- read.csv("10A_cristales.csv", row.names = 14, as.is = TRUE)
+data <- read.csv("data/10A_cristales.csv", row.names = 14, as.is = TRUE)
 data<- rename(data,  "transparency" = "tranparency")
 View(data)
 ```
