@@ -122,7 +122,7 @@ discretizar_con_ausencia <- function(x, umbral_cero = 0.001) {
 }
 
 #Transformación de numérico a categórico
-columnas_num <- c("RI", "Na", "Mg", "Al", "Si", "K", "Ca", "Ba", "Fe", "hardness", "density", "thermal_exp")
+columnas_num <- c("RI", "Na", "Mg", "Al", "Si", "K", "Ca", "Ba", "Fe", "hardness", "density")
 
 for(col in columnas_num) {
   if(col %in% names(cristales)) {
@@ -135,13 +135,12 @@ cristales$color <- as.factor(cristales$color)
 cristales$tranparency <- as.factor(cristales$tranparency)
 cristales$Type <- as.factor(cristales$Type) 
 
-# Se elimina del análisis la variable de los identificadores
+# Se eliminan del análisis la variable de los identificadores y la variable no conocida
 cristales$id <- NULL
+cristales$thermal_exp <- NULL
 
 # Se convierte a transacciones
 trans <- as(cristales, "transactions")
-
-
 ```
 Por el interés para el análisis, las reglas seleccionadas se centran en las variables que aparecen con más frecuencia para los tipos de cristal como consecuentes, mostrando así las relaciones entre el uso de cada tipo dematerial y su composición o sus cualidades. Primero se hacen todas las reglas posibles que tengan como consecuente el tipo (y solamente el tipo), ordenándolas en función del lift que tengan. Además, se tiene en cuenta que para el tipo 3 solo hay 13 individuos, por lo que para que haya reglas que sean representativas de los cristales más comunes y también reglas que tengan en cuenta la menor cantidad de cristales de este tipo, se harán dos grupos de reglas con soportes diferentes.
 ```{r}
@@ -169,4 +168,4 @@ mejor_tipo5 <- head(subset(reglas_final, rhs %in% "Type=5"), 1)
 inspect(c(mejor_tipo1, mejor_tipo2, mejor_tipo3, mejor_tipo4, mejor_tipo5))
 ```
 Tras este anáslisis, se puede ver reflejado cómo de común es cada cristal: tipo 1 y tipo2, que son los más comunes, presentan reglas con mayor count y menor lift que los otros 3 tipos, con el caso excepcional del tipo 3 en el que la regla obtenida tiene un lift muy superior pero con menos soporte que el resto.
-El tipo 1 se caracterizaría por Un índice de refracción medio (RI) y un nivel de Mg medio. El tipo2, por un RI bajo, nivel medio de Mg, nivel alto de K y ausencia de Fe. El tipo de tres tendría un nivel medio de Ca, una dureza baja, sería transparente y una exposición térmica baja. El tipo 4 tendría un Ca alto, una ausencia de Ba y un color opaco. Finalmente, el tipo 5 tendría un nivel alto de Al y un nivel medio de Ba. Estas diferencias reflejan cómo, según la composición de un cristal, se obtienen distintas propiedades, y cómo, en función de estas propiedades se le dará un uso u otro a cada cristal.
+El tipo 1 se caracterizaría por Un índice de refracción medio (RI) y un nivel de Mg medio. El tipo2, por un RI bajo, nivel medio de Mg, nivel alto de K y ausencia de Fe. El tipo de tres tendría un nivel medio de Ca, una dureza baja y de color transparente. El tipo 4 tendría un Ca alto, una ausencia de Ba y un color opaco. Finalmente, el tipo 5 tendría un nivel alto de Al y un nivel medio de Ba. Estas diferencias reflejan cómo, según la composición de un cristal, se obtienen distintas propiedades, y cómo, en función de estas propiedades se le dará un uso u otro a cada cristal.

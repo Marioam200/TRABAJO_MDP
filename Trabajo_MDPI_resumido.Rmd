@@ -236,8 +236,8 @@ print(round(apply(data_final_escalada[columnas_a_escalar], 2, sd), 5))
 ```
 # Reglas de asociación
 
-Para poder aplicar las reglas de asociación a nuestros datos, es esencial la transformación del tipo de dato. Para hacerlo correctamente, es necesario hacer primero una función de discretización que permita convertir todas las variables numéricas en categóricas, y tras esto, convertir el tipo de dato en transactions para poder usar la librería arules y aplicar el algoritmo apriori.
-Para facilitar la transformación, se vuelve a tomar la basde de datos inicial.
+Para poder aplicar las reglas de asociación a nuestros datos, es esencial la transformación del tipo de dato. Para hacerlo correctamente, es necesario hacer primero una función de discretización que permita convertir todas las variables numéricas en factores, y tras esto, convertir el tipo de dato en transactions para poder usar la librería arules y aplicar el algoritmo apriori.
+Para facilitar la transformación, se vuelve a tomar la base de datos inicial. En la discretización, los niveles de cada elemento se separaran en los grupos nivel bajo, medio, alto y ausencia (o en bajo y alto si solo hay dos valores posibles), para tener en cuenta que la falta de un material afectará a su composición y para evitar que se confunda la ausencia de un material con un nivel bajo de éste. Dureza y densidad se separarán en los niveles bajo, medio y alto.
 ```{r}
 cristales <- read_csv("10A_cristales.csv")
 cristales <- as.data.frame(cristales)
@@ -278,13 +278,12 @@ cristales$color <- as.factor(cristales$color)
 cristales$tranparency <- as.factor(cristales$tranparency)
 cristales$Type <- as.factor(cristales$Type) 
 
-# Se elimina del análisis la variable de los identificadores
+# Se eliminan del análisis la variable de los identificadores y la variable no conocida
 cristales$id <- NULL
+cristales$thermal_exp <- NULL
 
 # Se convierte a transacciones
 trans <- as(cristales, "transactions")
-
-
 ```
 
 ## Aplicación del algoritmo apriori
@@ -311,7 +310,7 @@ inspect(head(reglas_final, 10))
 
 ## Análisis de las reglas
 
-En este primer análisis, se puede ver cómo todas las reglas de mayor lift tinen como consecuente el tipo 3, con un lift de 14, pero con soportes más bajos. Esto se deberá a que los cristales de tipo 3 son una minoría en la base de datos, pero todos los cristales de este tipo tienen composiciones idénticas, llegando así a este lift máximo. Para poder ver la influencia en todos los tipos, se buscan y analizan las primeras reglas de cada uno de los tipos, es decir, aquella regla con un mayor lift para cada utilidad de los cristales.
+En este primer análisis, se puede ver cómo todas las reglas de mayor lift tinen como consecuente el tipo 3, con un lift de 14, pero con soportes más bajos. Esto se deberá a que los cristales de tipo 3 son una minoría en la base de datos, pero todos los cristales de este tipo tienen composiciones muy similares, llegando así a este lift máximo. Para poder ver la influencia en todos los tipos, se buscan y analizan la primera regla de cada uno de los tipos, es decir, aquella con un mayor lift para cada uso de los cristales.
 ```{r}
 mejor_tipo1 <- head(subset(reglas_final, rhs %in% "Type=1"), 1)
 mejor_tipo2 <- head(subset(reglas_final, rhs %in% "Type=2"), 1)
@@ -320,8 +319,8 @@ mejor_tipo4 <- head(subset(reglas_final, rhs %in% "Type=4"), 1)
 mejor_tipo5 <- head(subset(reglas_final, rhs %in% "Type=5"), 1)
 inspect(c(mejor_tipo1, mejor_tipo2, mejor_tipo3, mejor_tipo4, mejor_tipo5))
 ```
-Tras este anáslisis, se puede ver reflejado cómo de común es cada cristal: tipo 1 y tipo2, que son los más comunes, presentan reglas con mayor count y menor lift que los otros 3 tipos, con el caso excepcional del tipo 3 en el que la regla obtenida tiene un lift muy superior pero con menos soporte que el resto.
-El tipo 1 se caracterizaría por Un índice de refracción medio (RI) y un nivel de Mg medio. El tipo2, por un RI bajo, nivel medio de Mg, nivel alto de K y ausencia de Fe. El tipo de tres tendría un nivel medio de Ca, una dureza baja, sería transparente y una exposición térmica baja. El tipo 4 tendría un Ca alto, una ausencia de Ba y un color opaco. Finalmente, el tipo 5 tendría un nivel alto de Al y un nivel medio de Ba. Estas diferencias reflejan cómo, según la composición de un cristal, se obtienen distintas propiedades, y cómo, en función de estas propiedades se le dará un uso u otro a cada cristal.
+Tras este anáslisis, se puede ver reflejado cómo de común es cada cristal: tipo 1 y tipo2, que son los más comunes, presentan reglas con mayor count y menor lift que los otros 3 tipos, con el caso excepcional del tipo 3 en el que la regla obtenida tiene un lift muy superior (14) pero con menos soporte que el resto.
+El tipo 1 se caracterizaría por una cantidad baja de Al y un nivel de Mg medio. El tipo2, por un RI bajo, nivel medio de Mg, nivel alto de K y ausencia de Fe. El tipo tres tendrá un RI bajo, cantidades medias de Al y Ca; y ausencia de Ba. El tipo 4 tendría un Ca alto, una ausencia de Ba y un color opaco. Finalmente, el tipo 5 tendría un nivel alto de Al y un nivel medio de Ba. Estas diferencias reflejan cómo, según la composición de un cristal, se obtienen distintas propiedades, y cómo, en función de estas propiedades se le dará un uso u otro a cada cristal.
 
 # Análisis Factorial de Correspondencias
 
