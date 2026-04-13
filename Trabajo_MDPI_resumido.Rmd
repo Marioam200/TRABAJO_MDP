@@ -19,6 +19,8 @@ library(PLSandO)
 library(FactoMineR)
 library(factoextra)
 library(corrplot)
+library(arules)
+library(arulesViz)
 ```
 
 # Exploración y preparación de la BBDD
@@ -232,6 +234,94 @@ print(round(colMeans(data_final_escalada[columnas_a_escalar]), 5))
 print("Desviaciones típicas (deben ser 1):")
 print(round(apply(data_final_escalada[columnas_a_escalar], 2, sd), 5))
 ```
+# Reglas de asociación
+
+Para poder aplicar las reglas de asociación a nuestros datos, es esencial la transformación del tipo de dato. Para hacerlo correctamente, es necesario hacer primero una función de discretización que permita convertir todas las variables numéricas en categóricas, y tras esto, convertir el tipo de dato en transactions para poder usar la librería arules y aplicar el algoritmo apriori.
+Para facilitar la transformación, se vuelve a tomar la basde de datos inicial.
+```{r}
+cristales <- read_csv("10A_cristales.csv")
+cristales <- as.data.frame(cristales)
+
+#Función de discretización utilizada, marcando presencia y cantidad de cada elemento y niveles de dureza y densidad
+discretizar_con_ausencia <- function(x, umbral_cero = 0.001) {
+  es_cero <- abs(x) < umbral_cero
+  if (all(es_cero)) return(factor(rep("ausente", length(x)), levels = "ausente"))
+  
+  x_pos <- x[!es_cero]
+  n_unique <- length(unique(x_pos))
+  
+  if (n_unique == 1) { labels <- "presente"; brks <- 1 }
+  else if (n_unique == 2) { labels <- c("bajo", "alto"); brks <- 2 }
+  else { labels <- c("bajo", "medio", "alto"); brks <- 3 }
+  
+  x_pos_disc <- discretize(x_pos, method = "frequency", breaks = brks, labels = labels)
+  
+  resultado <- vector("character", length(x))
+  resultado[es_cero] <- "ausente"
+  resultado[!es_cero] <- as.character(x_pos_disc)
+  
+  niveles_final <- intersect(c("ausente", "bajo", "medio", "alto", "presente"), unique(resultado))
+  factor(resultado, levels = niveles_final)
+}
+
+#Transformación de numérico a categórico
+columnas_num <- c("RI", "Na", "Mg", "Al", "Si", "K", "Ca", "Ba", "Fe", "hardness", "density", "thermal_exp")
+
+for(col in columnas_num) {
+  if(col %in% names(cristales)) {
+    cristales[[col]] <- discretizar_con_ausencia(cristales[[col]])
+  }
+}
+
+#Transformación de variables categóricas
+cristales$color <- as.factor(cristales$color)
+cristales$tranparency <- as.factor(cristales$tranparency)
+cristales$Type <- as.factor(cristales$Type) 
+
+# Se elimina del análisis la variable de los identificadores
+cristales$id <- NULL
+
+# Se convierte a transacciones
+trans <- as(cristales, "transactions")
+
+
+```
+
+## Aplicación del algoritmo apriori
+
+Por el interés para el análisis, las reglas seleccionadas se centran en las variables que aparecen con más frecuencia para los tipos de cristal como consecuentes, mostrando así las relaciones entre el uso de cada tipo dematerial y su composición o sus cualidades. Primero se hacen todas las reglas posibles que tengan como consecuente el tipo (y solamente el tipo), ordenándolas en función del lift que tengan. Además, se tiene en cuenta que para el tipo 3 solo hay 13 individuos, por lo que para que haya reglas que sean representativas de los cristales más comunes y también reglas que tengan en cuenta la menor cantidad de cristales de este tipo, se harán dos grupos de reglas con soportes diferentes.
+```{r}
+reglas_tipos_comunes <- apriori(trans, parameter = list(supp = 0.05, conf = 0.8, minlen = 2),
+                       appearance = list(rhs = c("Type=1", "Type=2", "Type=4", "Type=5"), default = "lhs"), control = list(verbose = FALSE))
+reglas_tipo_3 <- apriori(trans, parameter = list(supp = 0.02, conf = 0.8, minlen = 2),
+                       appearance = list(rhs = c("Type=3"), default = "lhs"), control = list(verbose = FALSE))
+reglas_combinadas <- c(reglas_tipos_comunes, reglas_tipo_3)
+reglas_ordenadas <- sort(reglas_combinadas, by = "lift")
+summary(reglas_ordenadas)
+```
+
+## Filtrado de las reglas
+
+Se obtienen 514 reglas, por lo que es necesario pasar a un filtrado en el que se eliminen aquellas que sean redundantes y no aporten información.
+
+```{r}
+reglas_final <- reglas_ordenadas[!is.redundant(reglas_ordenadas)]
+inspect(head(reglas_final, 10))
+```
+
+## Análisis de las reglas
+
+En este primer análisis, se puede ver cómo todas las reglas de mayor lift tinen como consecuente el tipo 3, con un lift de 14, pero con soportes más bajos. Esto se deberá a que los cristales de tipo 3 son una minoría en la base de datos, pero todos los cristales de este tipo tienen composiciones idénticas, llegando así a este lift máximo. Para poder ver la influencia en todos los tipos, se buscan y analizan las primeras reglas de cada uno de los tipos, es decir, aquella regla con un mayor lift para cada utilidad de los cristales.
+```{r}
+mejor_tipo1 <- head(subset(reglas_final, rhs %in% "Type=1"), 1)
+mejor_tipo2 <- head(subset(reglas_final, rhs %in% "Type=2"), 1)
+mejor_tipo3 <- head(subset(reglas_final, rhs %in% "Type=3"), 1)
+mejor_tipo4 <- head(subset(reglas_final, rhs %in% "Type=4"), 1)
+mejor_tipo5 <- head(subset(reglas_final, rhs %in% "Type=5"), 1)
+inspect(c(mejor_tipo1, mejor_tipo2, mejor_tipo3, mejor_tipo4, mejor_tipo5))
+```
+Tras este anáslisis, se puede ver reflejado cómo de común es cada cristal: tipo 1 y tipo2, que son los más comunes, presentan reglas con mayor count y menor lift que los otros 3 tipos, con el caso excepcional del tipo 3 en el que la regla obtenida tiene un lift muy superior pero con menos soporte que el resto.
+El tipo 1 se caracterizaría por Un índice de refracción medio (RI) y un nivel de Mg medio. El tipo2, por un RI bajo, nivel medio de Mg, nivel alto de K y ausencia de Fe. El tipo de tres tendría un nivel medio de Ca, una dureza baja, sería transparente y una exposición térmica baja. El tipo 4 tendría un Ca alto, una ausencia de Ba y un color opaco. Finalmente, el tipo 5 tendría un nivel alto de Al y un nivel medio de Ba. Estas diferencias reflejan cómo, según la composición de un cristal, se obtienen distintas propiedades, y cómo, en función de estas propiedades se le dará un uso u otro a cada cristal.
 
 # Análisis Factorial de Correspondencias
 
