@@ -1,0 +1,663 @@
+---
+title: "Estudio sobre los Cristales"
+author: "Mario Álvarez Martínez, Jorge Aranda Honrubia, Pablo de Puelles Carceles, Julia Ruiz Picó, Cristina Tárraga Herrero (Grupo A1-10)"
+date: "`r Sys.Date()`"
+output:
+  word_document: default
+  pdf_document: default
+---
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE, cache = FALSE, include = TRUE, warning = FALSE, message = FALSE, comment = "")
+
+# Carga directa de librerías (Sin textos de instalación)
+library(readr)
+library(dplyr)
+library(knitr)
+library(gridExtra)
+library(PLSandO)
+library(FactoMineR)
+library(factoextra)
+library(corrplot)
+library(arules)
+library(arulesViz)
+```
+
+# Exploración y preparación de la BBDD
+## Descripción y naturaleza de las variables
+
+```{r}
+
+# la columna 14 (identificador del cristal) pasa a dar nombre a las filas
+data <- read.csv("10A_cristales.csv", row.names = 14, as.is = TRUE)
+
+# se renombra la variable "transparency" por una errata en la base de datos y "type" para conseguir coherencia de los nombres en minúscula
+data<- rename(data, "transparency" = "tranparency")
+data<- rename(data, "type" = "Type")
+
+View(data)
+
+descData = data.frame("variable" = colnames(data),
+                      "tipo" = c(rep("numerical", 9), 
+                                 rep("categorical", 1),
+                                 rep("numerical", 1),
+                                 rep("categorical", 2),
+                                 rep("numerical", ncol(data) - 13)))
+rownames(descData) = colnames(data)
+descData
+```
+Nos encontramos ante una base de datos que registra información sobre distintos cristales. La base original procede del conjunto de datos Glass del paquete mlbench de R.
+
+Inicialmente, se han registrado `r ncol(data)` variables para `r nrow(data)` muestras de cristales.
+
+La base de datos recoge 8 variables referidas a la composición química de las muestras, representadas como las proporciones relativas de los distintos elementos químicos presentes en el cristal.
+
+También se incluyen parámetros físicos, tales como el índice de refracción (RI), la densidad y la dureza del cristal, medida esta última en una escala ordinal tipo Mohs, donde 1 indica menor dureza y 7 mayor dureza.
+
+Además, presenta 3 variables categóricas, la primera de ellas recodificada como valores 1-4:
+
+- type: tipo de cristal según su uso (1: ventanas de edificios con vidrio flotado; 2: ventanas de edificios sin vidrio flotado; 3: ventanas de vehículos con vidrio flotado; 4: envases y artículos de mesa; 5: faros).
+- color: indica el color del cristal (CL: transparente; WH: blanco; OT: otros colores).
+- transparency: indica el nivel de transparencia del cristal (TP: transparente; TL: translúcido; OP: opaco).
+
+Por último, detectamos la variable thermal_exp. Como no se conoce su significado concreto, se decide su eliminación, actualizando por tanto la tabla de clasificación de las variables.
+
+````{r}
+data$thermal_exp <-NULL
+View(data)
+
+descData <- descData[-15,] # se elimina la fila 15 (thermal_exp)
+````
+
+## Análisis descriptivo
+### Variables constantes o casi constantes
+
+Queremos comprobar si existe alguna variable con variabilidad reducida o inexistente.
+
+Para las variables numéricas se opta por utilizar el coeficiente de variación, mientras que para las variables categóricas se obtendrán dos tablas de frecuencias (absolutas y relativas) y se comprobará si una sola categoría contiene la mayoría o totalidad de los datos.
+
+
+```{r, results = 'hide'}
+## Numéricas
+# Filtramos para asegurar que solo usamos columnas que R reconoce como números
+vars_num <- descData$variable[descData$tipo == "numerical"]
+data_num <- data[, vars_num]
+# Forzamos que todo sea numérico por si acaso
+data_num <- as.data.frame(lapply(data_num, as.numeric))
+
+summary(data_num)
+
+# Variabilidad (desviación típica)
+mySD = apply(data_num, 2, sd, na.rm = TRUE)
+
+# Coeficiente de variación
+myMU = colMeans(data_num, na.rm = TRUE)
+myCV = mySD / myMU
+sort(myCV)
+
+## Categóricas
+vars_cat <- descData$variable[descData$tipo == "categorical"]
+apply(data[, vars_cat], 2, table, useNA = "ifany")
+
+apply(data[, vars_cat], 2,
+      function (x) round(100*table(x)/sum(table(x)), 2))
+```
+
+Por ahora se decide no eliminar ninguna variable, ya que ninguna de ellas presenta un comportamiento constante o casi constante. Se considera que todas pueden aportar información valiosa al análisis. 
+
+### Valores inconsistentes o anómalos
+
+A continuación se analiza si alguna de las variables presenta valores que no son posibles dentro del rango de definición de la variable. 
+
+Por un lado, el estudio de los valores anómalos de las variables numéricas parte de la representación de cada una de ellas en un diagrama de caja y bigotes, aplicando la función scale para analizar los valores en términos relativos.
+
+
+```{r anomalos}
+# 1. Seleccionamos SOLO las columnas que son realmente números en el dataset 'data'
+# Esto evita depender de 'descData', que parece estar dando problemas
+data_solo_numeros <- data[, sapply(data, is.numeric)]
+
+# 2. Eliminamos columnas que tengan TODO valores NA (si las hay)
+data_solo_numeros <- data_solo_numeros[, colSums(!is.na(data_solo_numeros)) > 0]
+
+# 3. Graficamos con un control de margen para que se vean los nombres
+par(mar = c(9, 4, 2, 2))
+boxplot(scale(data_solo_numeros), las = 2, main = "Detección de Atípicos (Escalado)")
+```
+
+Destacan valores extremos en las variables K y Ba.
+
+```{r, results='hide'}
+par(mfrow=c(1,2))
+hist(data$K, 50)
+boxplot(data$K)
+table(data$K)
+```
+
+La proporción relativa de potasio en los cristales se mueve entre valores de 0 y 3, por lo que interpretamos los dos valores extremos `r max(data$K)` como errores y los reemplazamos por valores faltantes (NA).
+
+```{r, results= 'hide'}
+data[which(data$K > 3), "K"] = NA
+summary(data$K)
+table(data$K)
+```
+
+El bario es un elemento presente en los cristales en proporción muy dispar, según la asimetría de la distribución. Mantenemos los valores anómalos, como reflejo del comportamiento real de la variable.
+
+```{r, results='hide', fig.show = 'hide'}
+par(mfrow=c(1,2))
+hist(data$Ba, 50)
+boxplot(data$Ba)
+table(data$K)
+```
+No identificamos ningún valor inconsistente en los datos de color y transparencia de los cristales, a partir de los gráficos de barras.
+
+```{r, fig.show = 'hide'}
+## Color (por ser discreta con pocos valores diferentes, utilizaremos un gráfico de barras)
+barplot(table(data$color))
+
+## Tranparency (por ser discreta con pocos valores diferentes, utilizaremos un gráfico de barras)
+barplot(table(data$transparency))
+```
+
+### Valores faltantes
+Los únicos valores faltantes presentes en la base de datos son los dos NA forzados en la variable K por la presencia de anómalos.
+
+### Transformación y recodificación de variables
+
+Antes de avanzar, es necesario revisar si nuestras variables necesitan algún ajuste para que el análisis sea más fluido. 
+
+#### Transformar variables categóricas a variables 0-1.
+
+Comenzaremos con la transformación de las variables categóricas (color y transparency) a dummies (0-1) para asegurar su compatibilidad con los modelos analíticos, como PCA.
+
+```{r, results='hide'}
+matriz_dummies <- model.matrix(~ 0 + color + transparency, data = data)
+
+head(matriz_dummies)
+```
+
+```{r}
+data_dummies <- as.data.frame(matriz_dummies)
+data_final <- cbind(data[, !(names(data) %in% c("color", "transparency", "id"))], data_dummies)
+head(data_final)
+```
+
+
+#### Transformaciones para conseguir normalidad o simetría (Autoescalado)
+
+Dado que las variables tienen escalas y unidades muy distintas, como el índice de refracción (RI) y el contenido de sodio (Na), es crucial ajustar todas las variables para que tengan una media de cero y una desviación típica de uno. Esto evita que las variables con valores numéricos más altos dominen el análisis en técnicas como el PCA.
+
+Para determinar el método de normalización más adecuado, realizaremos una comparación visual entre la distribución original de las variables numéricas y su comportamiento tras aplicar una transformación logarítmica.
+
+```{r, results='hide'}
+plot(density(data$Fe), main = "Densidad Fe (Original)", 
+     col = "blue3", lwd = 2, xlab = "Contenido de Hierro")
+
+
+data$Fe_log <- log2(data$Fe)
+plot(density(data$Fe_log), main = "Densidad Fe (Transformada log2)", 
+     col = "red3", lwd = 2, xlab = "Log2(Fe)")
+
+columnas_numericas <- c("RI", "Na", "Mg", "Al", "Si", "K", "Ca", "Ba", "Fe")
+data_normalizada <- data
+data_normalizada[columnas_numericas] <- scale(data[columnas_numericas])
+
+colMeans(data_normalizada[columnas_numericas])
+apply(data_normalizada[columnas_numericas], 2, sd)
+```
+
+Como la transformación logarítmica sí "endereza" la distribución, comprobamos que podría resultar útil al emplear el PCA, pero por el momento estandarizamos las variables numéricas haciendo uso de Z-score.
+
+```{r, results='hide'}
+# 1. Definimos las columnas base (sin thermal_exp porque ya no existe)
+columnas_base <- c("RI", "Na", "Mg", "Al", "Si", "K", "Ca", "Ba", "Fe", 
+                    "hardness", "density")
+
+# 2. Identificamos automáticamente los nombres reales de las columnas dummy
+columnas_dummies <- grep("color|transparency", colnames(data_final), value = TRUE)
+
+# 3. Lista final filtrada: Solo columnas que REALMENTE existen en data_final
+columnas_a_escalar <- intersect(c(columnas_base, columnas_dummies), colnames(data_final))
+
+# Verificamos si falta alguna que esperábamos
+setdiff(c(columnas_base, columnas_dummies), colnames(data_final))
+```
+
+
+```{r, results='hide'}
+# 2. Aplicar el escalado (Z-score)
+data_final_escalada <- data_final
+data_final_escalada[columnas_a_escalar] <- scale(data_final[columnas_a_escalar])
+
+# 3. Comprobar resultados 
+
+print("Medias (deben ser casi 0):")
+print(round(colMeans(data_final_escalada[columnas_a_escalar]), 5))
+print("Desviaciones típicas (deben ser 1):")
+print(round(apply(data_final_escalada[columnas_a_escalar], 2, sd), 5))
+```
+
+# Análisis de Componentes Principales
+
+El PCA se ha aplicado con el objetivo de reducir la dimensionalidad de la base de datos, permitiendo identificar las relaciones entre las variables físico-químicas y la estructura de agrupación de las muestras de cristal.
+
+## Tratamiento de los datos
+
+Se utilizaron todas las variables numéricas exceptuando el identificador `id` y `thermal_exp`(ya que se desconocía el significado de esta última y se eliminó). Los valores inconsistentes en la variable Potasio (K) fueron sustituidos por NA, permitiendo el uso del algoritmo NIPALS. Las variables categóricas (color y transparencia) ya fueron transformadas como variables dummy (0-1).
+
+Y ya se aplicó el centrado y escalado estándar a todas las variables para evitar que aquellas con magnitudes más grandes dominasen el análisis.
+
+## Selección del número de componentes principales
+
+```{r}
+datos_pca <- data_final_escalada[columnas_a_escalar] 
+
+# Como tenemos NA utilizo Nipals
+mipca <- pca(datos_pca, ncomp = NULL, algo = "nipals", scaling = FALSE)
+
+pcaPlot(mipca, type = 'scree')
+```
+Como podemos observar en el scree plot, es recomendable elegir un  total de 7 componentes principales (aquellas que superan la varianza media explicada por una PC, ilustrada por la línea roja). Para comprobar que es una correcta selección de componentes, podemos aplicar el criterio de Kaiser:
+
+```{r}
+
+kable(mipca$explVar[1:8,])
+```
+
+Aplicar el criterio de Kaiser supone elegir sólo las componentes con valores propios superiores a 1 (es decir, aquellas que explican mayor varianza que una variable escalada original, que tendría un valor propio de 1). La tabla evidencia que sólo las primeras siete componentes superan el 1. Estas siete componentes explican el 79.12% de la varianza acumulada. Aunque las primeras dos componentes capturan el 34.96% de la varianza, las componentes adicionales revelan patrones químicos importantes que no deben ignorarse en la caracterización de cristales.
+Así pues, repetimos el análisis con 7 componentes: 
+
+```{r}
+mipca <- pca(datos_pca, ncomp = 7, algo = "nipals", scaling = FALSE)
+```
+
+```{r}
+
+type = factor(data_final[rownames(datos_pca), "type"])
+
+
+p1 = pcaPlot(mipca, type = 'scores', comp = 1:2, labels = FALSE, colBy =data.frame("Type" = type), ellipses = FALSE,
+              repel = TRUE)
+p2 = pcaPlot(mipca, type = 'corr', comp = 1:2, colBy = "contrib", 
+             labels = TRUE, repel = TRUE, col = "hot")
+p3 = pcaPlot(mipca, type = 'scores', comp = 3:4, labels = FALSE, colBy =data.frame("Type" = type), ellipses = FALSE,
+              repel = TRUE)
+p4 = pcaPlot(mipca, type = 'corr', comp = 3:4, colBy = "contrib", 
+             labels = TRUE, repel = TRUE, col = "hot")
+p5 = pcaPlot(mipca, type = 'scores', comp = 5:6, labels = FALSE, colBy =data.frame("Type" = type), ellipses = FALSE,
+              repel = TRUE)
+p6 = pcaPlot(mipca, type = 'corr', comp = 5:6, colBy = "contrib", 
+             labels = TRUE, repel = TRUE, col = "hot")
+p7 = pcaPlot(mipca, type = 'scores', comp = 6:7, labels = FALSE, colBy =data.frame("Type" = type), ellipses = FALSE,
+              repel = TRUE)
+p8 = pcaPlot(mipca, type = 'corr', comp = 6:7, colBy = "contrib", 
+             labels = TRUE, repel = TRUE, col = "hot")
+
+p8
+
+
+```
+Al general estos gráficos, observamos como la séptima componente captura casi exclusivamente la variabilidad relacionada con hardness. Así pues, es necesario cuestionar su utilidad para el modelo, ya que no recoge mucha más información de lo que la variable original hardness ya aportaba por sí misma: PC7 no contribuye especialmente a la reducción de dimensionalidad (que es el objetivo del PCA). Por lo tanto es conveniente reducir el modelo a sólo 6 componentes. 
+
+```{r}
+mipca <- pca(datos_pca, ncomp = 6, algo = "nipals", scaling = FALSE)
+```
+
+## Validación del modelo
+### Anómalos moderados
+Comenzaremos con la detección de anómalos moderados utilizando SCR (Suma de Cuadrados Residual). Aquellas observaciones con valores muy altos de SCR estarán poco explicadas por el modelo, y por lo tanto serán consideradas anómalas. Para establecer el límite máximo de SCR con el que se considera que una observación sigue siendo válida empleamos dos niveles de confianza (95% y 99%).
+
+```{r}
+par(mfrow = c(1,2))
+anomSCR95 = pcaOutliers(mipca, method = "RSS", conf = 95)
+anomSCR99 = pcaOutliers(mipca, method = "RSS", conf = 99)
+```
+Al elegir el límite más potente (aquel que detectará más anómalos) 95%, nos encontramos con 8 observaciones. 
+```{r, results='hide'}
+
+moderados = sort(anomSCR95$RSS[anomSCR95$ModerateOutliers], decreasing = TRUE)
+print("Cristales moderados detectados:")
+print(moderados)
+```
+
+
+```{r, echo=FALSE,results='hide',fig.keep='all'}
+par(mfrow = c(1,3))
+p1 = outlierContrib(mipca, outliers = anomSCR95, specificObs = names(moderados[1:3]))
+```
+A partir de los gráficos de contribuciones SCR, podemos observar, por ejemplo, que para id150, id54 ó id146, el valor de colorOT es bajo y contribuye negativamente a su SCR. No obstante,  esto no es motivo de preocupación, ya que colorOT sólo puede tomar 2 valores en nuestra base de datos (al ser una variable dummy) y estas observaciones simplemente están tomando el valor más bajo posible. No es un error o una anomalía. 
+
+No obstante, los valores altos que toman, por ejemplo, id132 e id145 para K y Ba respectivamente sí son un motivo de preocupación. Si representamos sus distribuciones (ya centradas y escaladas): 
+
+```{r}
+par(mfrow = c(1,2))
+p1 = plot(density(na.omit(datos_pca$K)), main = "Distribución potasio K", 
+     col = "red3", lwd = 2, xlab = "K")
+p2 = plot(density(na.omit(datos_pca$Ba)), main = "Distribución bario Ba", 
+     col = "red3", lwd = 2, xlab = "Ba")
+```
+
+La primera variable (K) presenta dos picos: uno alrededor del 0.0, y otro sobre 0.6. Debido a la cantidad de observaciones que se acumulan sobre este valor, podría asumirse que esta tendencia de los valores de K a acercarse generalmente a uno de estos picos es una característica particular de esta variable y no un error o anomalía. No obstante, a partir de 0.6 aparecen unos cuantos valores muy elevados.  
+
+Para la variable Ba, aparece un único pico en 0.0, por lo que parece seguir, excluyendo pocos valores muy elevados, una distribución normal. 
+
+Ambas presentan colas a la derecha de sus picos, por lo que se supone que una transformación para mitigar la asimetría positiva (como log(x+1)) podría ser útil para reducir el comportamiento anómalo de algunos valores. 
+
+### Anómalos severos
+
+A continuación, se detectarán los anómalos severos, es decir, aquellos que condicionan el modelo. Estos se caracterizarán por tener SCR bajos (es decir, sí que están explicados por el modelo porque condicionan el modelo a ellos mismos). 
+
+```{r, fig.keep='none'}
+par(mfrow = c(1,2))
+anomSev95 = pcaOutliers(mipca, method = "T2", conf = 95)
+anomSev99 = pcaOutliers(mipca, method = "T2", conf = 99)
+```
+
+
+Repetimos el proceso anterior y encontramos una gran cantidad de anómalos severos, 11 concretamente.
+
+```{r, include = FALSE}
+severos = sort(anomSev95$T2[anomSev95$SevereOutliers], decreasing = TRUE)
+```
+
+```{r, echo=FALSE,results='hide',fig.keep='all'}
+par(mfrow = c(1,3))
+outlierContrib(mipca, outliers = anomSev95, specificObs = names(severos[1:3]))
+
+```
+```{r, results='hide'}
+print("Cristales severos detectados (con transformación logarítmica):")
+print(severos)
+```
+Prácticamente todas las variables de composición química tienen valores anómalos severos asociados. Esto es muy preocupante.Podríamos aplicar la eliminación (pero perderíamos muchos datos), por lo que se procede a aplicar las transformaciones logarítmicas a las variables anteriores (K y Ba) y recalcular el modelo PCA. También sería interesante aplicar la transformación a las otras variables químicas, pero estas no presentan asimetría positiva significativa, y por lo tanto no se ve justificada su aplicación. 
+Tras aplicar las transformaciones, recalculamos los anómalos:
+
+```{r}
+library(sjmisc)
+columnas_log = c('K', 'Ba' )
+data_log = apply(data_final[columnas_log], 2, function(x) log1p(x))
+data_final_log = replace_columns(data_final, data_log)
+
+```
+
+```{r}
+data_final_escalada_log <- data_final_log
+data_final_escalada_log[columnas_a_escalar] <- scale(data_final_log[columnas_a_escalar])
+datos_pca_log <- data_final_escalada_log[columnas_a_escalar]
+mipca_log <- pca(datos_pca_log, ncomp = 6, algo = "nipals", scaling = FALSE)
+
+```
+
+
+```{r, include=FALSE}
+anomSev95_log = pcaOutliers(mipca_log, method = "T2", conf = 95)
+```
+
+```{r}
+severos_log = sort(anomSev95_log$T2[anomSev95_log$SevereOutliers], decreasing = TRUE)
+print("Cristales severos detectados (con transformación logarítmica):")
+print(severos_log)
+```
+
+```{r, include=FALSE}
+anomSCR95_log = pcaOutliers(mipca_log, method = "RSS", conf = 95)
+```
+
+```{r, results='hide'}
+moderados_log = sort(anomSCR95_log$RSS[anomSCR95_log$ModerateOutliers], decreasing = TRUE)
+print("Cristales moderados detectados (con transformación logarítmica):")
+print(moderados_log)
+```
+Nuestras transformaciones no han tenido un efecto positivo sobre la cantidad de anómalos (tanto moderados como severos) que aparecen en nuestra muestra, sino que de hecho han aumentado en cantidad. Así pues, esta estrategia de control de anómalos no es efectiva y se procederá a la eliminación de algunas de las observaciones anómalas (en concreto, 3 de cada categoría identificadas como más significativas), que se considerarán como errores: id145, id22 e id31 para los severos; id132, id150 e id145 para los moderados. Una vez eliminados, recalcularemos nuestro modelo PCA. 
+
+```{r}
+datos_pca_limpio <- datos_pca[-c(145, 22, 31, 132, 150), ]
+
+
+
+type_final = factor(data_final[rownames(datos_pca_limpio), "type"])
+mipca_final <- pca(datos_pca_limpio, ncomp = 6, algo = "nipals", scaling = FALSE)
+
+
+
+p1 = pcaPlot(mipca_final, type = 'scores', comp = 1:2, labels = FALSE, colBy =data.frame("Type" = type_final),
+              repel = TRUE)
+p2 = pcaPlot(mipca_final, type = 'corr', comp = 1:2, colBy = "contrib", 
+             labels = TRUE, repel = TRUE, col = "hot")
+
+p3 = pcaPlot(mipca_final, type = 'scores', comp = 3:4, labels = FALSE, colBy =data.frame("Type" = type_final), 
+              repel = TRUE)
+p4 = pcaPlot(mipca_final, type = 'corr', comp = 3:4, colBy = "contrib", 
+             labels = TRUE, repel = TRUE, col = "hot")
+
+p5 = pcaPlot(mipca_final, type = 'scores', comp = 5:6, labels = FALSE, colBy =data.frame("Type" = type_final), 
+              repel = TRUE)
+p6 = pcaPlot(mipca_final, type = 'corr', comp = 5:6, colBy = "contrib", 
+             labels = TRUE, repel = TRUE, col = "hot")
+
+p2
+p4
+p6
+p1
+
+
+```
+
+## Interpretación del modelo y conclusiones
+
+Las dos primeras componentes parecen estar relacionadas con los colores, la composición química y el índice de refracción (RI). 
+
+En primer lugar, la PC1 (representada en el eje horizontal), parece explicar en cierta medida la composición química de los cristales (mostrando, por ejemplo, que una composición alta en magnesio suele suponer un bajo contenido en alumnio o bario), aunque no se puede establecer algún patrón ordinal entre estos elementos. No obstante, sí se podría observar cierto 'orden' en la distribución de las variables dummy para Color. Se aprecia que colorCL (claro o transparente), colorWH (blanco) y color OT (otro, colorido) parecen estar ordenados a través de la PC1. De esta forma, la PC1 podría interpretarse como una medida de cómo de incoloro es un cristal.
+
+Además, la PC2 revela la correlación entre el índice de refracción (RI) y la composición de calcio. 
+
+La variable Transparency es la mayor contribuyente a la PC3, por lo que esta podría interpretarse como una medida de la transparencia del material, ya que las categorías de transparency TL (translúcidos) y transparencyTP (transparentes) se ordenan a través de la PC3.
+Para la PC4, vemos como la variable color contribuye de forma muy siginificativa. Sin embargo, y al contrario que en la PC1, no podemos establecer ningún orden entre las categorías (ya que aparecen como colorCL-> colorOT-> colorWH) y por lo tanto, esta componente no se puede interpretar como una medida de lo incoloro que sea un cristal (siendo esta la forma en la que leíamos la PC1).
+
+La PC5 refleja variaciones en Na y K, y la  correlación negativa entre estas dos variables. La PC6 captura principalmente variabilidad en Si y density. 
+
+Así pues, tanto la PC1 como la PC5 explican la variabilidad de la composición química de los cristales y la correlación entre diferentes elementos. Además, la PC1 puede intepretarse como una medida de cómo de incoloro es un cristal. Similarmente, la PC3 puede leerse como una medida de la transparencia del material. 
+
+Por último, los gráficos de scores, y el concreto el que se genera con la comparación PC1:PC2, clasifican cada bservación por su tipo y revelan las características frecuentes para cada uno de ellos:  el Tipo1 tendrá generalemnte valores positivos para la PC1, y por lo tanto se esperarán materiales transparentes, de colores claros y con alto Mg y Fe. No obstante, sus propiedades variarán más respecto a la PC2. Los elementos de Tipo3 y Tipo2 seguirán patrones similares. Los de Tipo4 y Tipo5, sin embargo, alencontrarse generalmente a la izquierda del eje de PC2, se esperará que expresen mayores valores de Ba, Na y Al, y que sean más coloridos. También expresarán variedad en las características de la PC2.
+
+
+# Reglas de asociación
+
+Para poder aplicar las reglas de asociación a nuestros datos, es esencial la transformación del tipo de dato. Para hacerlo correctamente, es necesario hacer primero una función de discretización que permita convertir todas las variables numéricas en factores, y tras esto, convertir el tipo de dato en transactions para poder usar la librería arules y aplicar el algoritmo apriori.
+
+Para facilitar la transformación, se vuelve a tomar la base de datos inicial. En la discretización, los niveles de cada elemento se separaran en los grupos nivel bajo, medio, alto y ausencia (o en bajo y alto si solo hay dos valores posibles), para tener en cuenta que la falta de un material afectará a su composición y para evitar que se confunda la ausencia de un material con un nivel bajo de éste. Dureza y densidad se separarán en los niveles bajo, medio y alto.
+
+```{r}
+cristales <- read_csv("10A_cristales.csv")
+cristales <- as.data.frame(cristales)
+
+#Función de discretización utilizada, marcando presencia y cantidad de cada elemento y niveles de dureza y densidad
+discretizar_con_ausencia <- function(x, umbral_cero = 0.001) {
+  es_cero <- abs(x) < umbral_cero
+  if (all(es_cero)) return(factor(rep("ausente", length(x)), levels = "ausente"))
+  
+  x_pos <- x[!es_cero]
+  n_unique <- length(unique(x_pos))
+  
+  if (n_unique == 1) { labels <- "presente"; brks <- 1 }
+  else if (n_unique == 2) { labels <- c("bajo", "alto"); brks <- 2 }
+  else { labels <- c("bajo", "medio", "alto"); brks <- 3 }
+  
+  x_pos_disc <- discretize(x_pos, method = "frequency", breaks = brks, labels = labels)
+  
+  resultado <- vector("character", length(x))
+  resultado[es_cero] <- "ausente"
+  resultado[!es_cero] <- as.character(x_pos_disc)
+  
+  niveles_final <- intersect(c("ausente", "bajo", "medio", "alto", "presente"), unique(resultado))
+  factor(resultado, levels = niveles_final)
+}
+
+#Transformación de numérico a categórico
+columnas_num <- c("RI", "Na", "Mg", "Al", "Si", "K", "Ca", "Ba", "Fe", "hardness", "density", "thermal_exp")
+
+for(col in columnas_num) {
+  if(col %in% names(cristales)) {
+    cristales[[col]] <- discretizar_con_ausencia(cristales[[col]])
+  }
+}
+
+#Transformación de variables categóricas
+cristales$color <- as.factor(cristales$color)
+cristales$tranparency <- as.factor(cristales$tranparency)
+cristales$Type <- as.factor(cristales$Type) 
+
+# Se eliminan del análisis la variable de los identificadores y la variable no conocida
+cristales$id <- NULL
+cristales$thermal_exp <- NULL
+
+# Se convierte a transacciones
+trans <- as(cristales, "transactions")
+```
+
+## Aplicación del algoritmo apriori
+
+Por el interés para el análisis, las reglas seleccionadas se centran en las variables que aparecen con más frecuencia para los tipos de cristal como consecuentes, mostrando así las relaciones entre el uso de cada tipo de material y su composición o sus cualidades. Primero se hacen todas las reglas posibles que tengan como consecuente el tipo (y solamente el tipo), ordenándolas en función del lift que tengan. Además, se tiene en cuenta que para el tipo 3 solo hay 13 individuos, por lo que para que haya reglas que sean representativas de los cristales más comunes y también reglas que tengan en cuenta la menor cantidad de cristales de este tipo, se harán dos grupos de reglas con soportes diferentes.
+
+```{r}
+reglas_tipos_comunes <- apriori(trans, parameter = list(supp = 0.05, conf = 0.8, minlen = 2),
+                       appearance = list(rhs = c("Type=1", "Type=2", "Type=4", "Type=5"), default = "lhs"), control = list(verbose = FALSE))
+reglas_tipo_3 <- apriori(trans, parameter = list(supp = 0.02, conf = 0.8, minlen = 2),
+                       appearance = list(rhs = c("Type=3"), default = "lhs"), control = list(verbose = FALSE))
+reglas_combinadas <- c(reglas_tipos_comunes, reglas_tipo_3)
+reglas_ordenadas <- sort(reglas_combinadas, by = "lift")
+summary(reglas_ordenadas)
+```
+
+## Filtrado de las reglas
+
+Se obtienen 493 reglas, por lo que es necesario pasar a un filtrado en el que se eliminen aquellas que sean redundantes y no aporten información.
+
+```{r, results='hide'}
+reglas_final <- reglas_ordenadas[!is.redundant(reglas_ordenadas)]
+inspect(head(reglas_final, 10))
+```
+
+## Análisis de las reglas
+
+En este primer análisis, se puede ver cómo todas las reglas de mayor lift tinen como consecuente el tipo 3, con un lift de 14, pero con soportes más bajos. Esto se deberá a que los cristales de tipo 3 son una minoría en la base de datos, pero todos los cristales de este tipo tienen composiciones muy similares, llegando así a este lift máximo. Para poder ver la influencia en todos los tipos, se buscan y analizan la primera regla de cada uno de los tipos, es decir, aquella con un mayor lift para cada uso de los cristales.
+```{r}
+mejor_tipo1 <- head(subset(reglas_final, rhs %in% "Type=1"), 1)
+mejor_tipo2 <- head(subset(reglas_final, rhs %in% "Type=2"), 1)
+mejor_tipo3 <- head(subset(reglas_final, rhs %in% "Type=3"), 1)
+mejor_tipo4 <- head(subset(reglas_final, rhs %in% "Type=4"), 1)
+mejor_tipo5 <- head(subset(reglas_final, rhs %in% "Type=5"), 1)
+inspect(c(mejor_tipo1, mejor_tipo2, mejor_tipo3, mejor_tipo4, mejor_tipo5))
+```
+Tras este anáslisis, se puede ver reflejado cómo de común es cada cristal: tipo 2, que es el más común, presenta reglas con mayor count y un lift reducido. Mientras que, en el caso excepcional del tipo 3, la regla obtenida tiene un lift muy superior a los otros (14), pero con menos soporte que el resto.
+
+El tipo 1 se caracterizaría por una cantidad baja de Al y un nivel de Mg medio. 
+
+El tipo2, por un RI bajo, nivel medio de Mg, nivel alto de K y ausencia de Fe. 
+
+El tipo tres tendrá un RI bajo, cantidades medias de Al y Ca; y ausencia de Ba. 
+
+El tipo 4 tendría un Ca alto, una ausencia de Ba y un color opaco y, finalmente, el tipo 5 tendría un nivel alto de Al y un nivel medio de Ba. 
+
+Estas diferencias reflejan cómo, según la composición de un cristal, se obtienen distintas propiedades, y cómo, en función de estas propiedades se le dará un uso u otro a cada cristal.
+
+# Análisis Factorial de Correspondencias
+
+Para aplicar el AFC Simple, es necesario contar con 2 factores que presenten un elevado número de categorías, lo que no se da en nuestro caso. Es por ello que optamos por aplicar el AFC múltiple sobre las 4 variables categóricas con las que contamos, representándolas en un espacio más reducido. Las variables (hardness (que podemos considerar categórica en este caso), color, transparency y type) quedan descritas en profundidad en la exploración inicial de la base de datos.
+
+
+```{r, results='hide'}
+colnames(data)
+data2 = data[, c("type", "hardness", "color", "transparency")]
+View(data2)
+
+# Tratar todas las variables como categóricas, para evitar errores con los ordinales de hardness y type
+
+data2[] <- lapply(data2, as.factor)
+```
+
+## Número de dimensiones y modelo inicial
+
+Generando un modelo AFC múltiple obtenemos un Scree Plot con 7 componentes cuya inercia representada supera la media total. No obstante, aplicamos el Elbow Method para seleccionar las tres primeras, pues resulta más apropiado para nuestro estudio. Queda explicada el 35% de la inercia total.
+
+```{r mca2, fig.width=5, fig.height=5}
+res.mca <- MCA(data2, graph = FALSE)
+eig.val <- get_eigenvalue(res.mca)
+Vmedia = 100 * (1/nrow(eig.val))
+fviz_eig(res.mca, addlabels = TRUE) +
+  geom_hline(yintercept=Vmedia, linetype=2, linewidth = 1.2, color="red")
+# kable(head(eig.val))
+```
+
+## Interpretación del modelo
+
+A continuación, se estudia la contribución de las variables a la formación de las componentes y la relación de las variables entre sí.
+
+```{r}
+res.mca <- MCA(data2, graph = FALSE, ncp = 3)
+# Correlación variables-componentes
+fviz_mca_var(res.mca, choice = "mca.cor", 
+             repel = TRUE, axes = 1:2,
+             ggtheme = theme_minimal())
+
+#Este gráfico no aportaba nada relevante
+#fviz_mca_var(res.mca, choice = "mca.cor", 
+             #repel = TRUE, axes = 2:3,
+             #ggtheme = theme_minimal())
+
+
+# Todas las dimensiones
+corrplot(res.mca$var$cos2, is.corr = FALSE, 
+         tl.col = 1, win.asp = 0.5, 
+         cl.ratio = 0.3, cl.cex = 0.8)
+```
+
+La dimensión 1 está principalmente asociada al color, concretamente a los cristales clasificados como Other y CL tranparente, y a la categoría de transparencia opaca. 
+
+Respecto a la segunda componente, tiene contribuyentes menos intensos, destacando los niveles de transparencia TL y TP, la categoría 4 de tipo, y, de forma menos relevante, los niveles 2, 6 y 7 de dureza. 
+
+Por último, en la componente 3, destacan el tipo 3 (ventanas de vehículos con vidrio flotado), el nivel de dureza 7 y el color WH.
+
+De los gráficos podemos deducir que el uso que se le da a un cristal está vinculado al nivel de transparencia del mismo, y que el color del cristal no se relaciona con su dureza. No obstante, para conocer mejor estas relaciones, se obtienen los siguientes gráficos.
+
+## Gráficos de variables y observaciones
+
+```{r}
+# Dimensiones 1 y 2
+fviz_mca_var(res.mca, col.var="steelblue", shape.var = 15, 
+             repel = TRUE, axes = 1:2, labelsize = 3)
+
+# Dimensiones 3 
+# fviz_mca_var(res.mca, col.var="steelblue", shape.var = 15, 
+             # repel = TRUE, axes = 2:3, labelsize = 3)
+
+
+```
+
+Del gráfico de variables deducimos que existen diferencias significativas entre los tipos de cristal 4 y 5 (empleados para la fabricación envases y artículos de mesa, y en faros, respectivamente), lo que es lógico, mientras que los de tipo 1 y 2, ambos empleados en ventanas de edificios, sí tienen propiedade similares, sobre todo en cuanto al nivel de dureza y el color transparente. 
+
+Por otro lado, los niveles de dureza 2 y 7 están desvinculados del resto, entre los que sí existe una relación.
+
+
+```{r}
+p1 = fviz_mca_ind(res.mca, axes = c(1,2),
+             label = "none",
+             habillage = "color",
+             palette = c("#00AFBB", "#E7B800", "#FC4E07", "#868686", "#C77CFF"),
+             addEllipses = TRUE,
+             ellipse.type = "confidence",
+             ggtheme = theme_minimal())
+
+p2 = fviz_mca_ind(res.mca, axes = c(2,3),
+             label = "none",
+             col.ind = data$transparency,
+             ggtheme = theme_minimal())
+
+grid.arrange(p1, p2, nrow = 1)
+
+```
+
+El gráfico de "color" reafirma lo comentado respecto a la contribución de los colores transparente, blanco y others a la primera componente, quedando representados de forma diferenciada de izquierda a derecha.
+
+El gráfico de individuos de la derecha permite observar la relación entre la segunda componente y el nivel de transparencia, quedando especialmente bien representada la distinción entre los cristales TL translúcidos y los TP transparentes. Sin embargo, la tercera componente no tiene esta variable como contribuyente.
+
