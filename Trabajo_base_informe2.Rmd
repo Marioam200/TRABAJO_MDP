@@ -1,0 +1,141 @@
+---
+title: "Estudio sobre los Cristales"
+author: "Mario Álvarez Martínez, Jorge Aranda Honrubia, Pablo de Puelles Carceles, Julia Ruiz Picó, Cristina Tárraga Herrero (Grupo A1-10)"
+date: "`r Sys.Date()`"
+output:
+  word_document: default
+  pdf_document: default
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE, cache = FALSE, include = TRUE, warning = FALSE, message = FALSE, comment = "")
+
+# Carga directa de librerías (Sin textos de instalación)
+library(readr)
+library(dplyr)
+library(knitr)
+library(gridExtra)
+library(PLSandO)
+library(FactoMineR)
+library(factoextra)
+library(corrplot)
+library(arules)
+library(arulesViz)
+library(mice)
+library(cluster)
+library(NbClust)
+library(clValid)
+library(aricode)
+library(biostatcolors)
+library(flextable) # hace falta instalarlo
+```
+
+# Descripción de la BBDD  [1 página máximo]
+
+```{r, echo=FALSE, message=FALSE}
+
+data <- read.csv("cristales_informe2.csv", row.names = 1)
+View(data)
+
+descripcionesConn <- c("Índice de refracción", 
+                              "Proporción relativa de sodio", 
+                              "Proporción relativa de magnesio", 
+                              "Proporción relativa de aluminio", 
+                              "Proporción relativa de silicio", 
+                              "Proporción relativa de potasio", 
+                              "Proporción relativa de calcio", 
+                              "Proporción relativa de bario", 
+                              "Proporción relativa de hierro", 
+                              "Tipo de cristal según su uso:\n- 1: ventanas edificios vidrio flotado\n- 2: ventanas edificios sin vidrio flotado\n- 3: ventanas vehículos vidrio flotado\n- 4: envases y artículos de mesa\n- 5: faros","Dureza medida en una escala ordinal tipo Mohs, donde 1 indica menor dureza y 7 mayor dureza", "Color del cristal:\n- CL: transparente\n- WH: blanco\n- OT: otros colores", "Nivel de transparencia del cristal:\n- TP: transparente\n- TL: translúcido\n- OP: opaco", "Densidad")
+
+descData = data.frame("Variable" = colnames(data),
+                      "Tipo" = c(rep("numerical", 9), 
+                                 rep("categorical", 1),
+                                 rep("numerical", 1),
+                                 rep("categorical", 2),
+                                 rep("numerical", ncol(data) - 13)),
+                      "Descripción" = gsub("\n", "\n", descripcionesConn))
+
+flextable(descData) %>%
+  width(j = 3, width = 7) %>%
+  align(j = 3, align = "left") %>%
+  set_table_properties(layout = "autofit")
+```
+
+Partimos de una base de datos ligeramente distinta a la original, en la que quedan registradas `r ncol(data)` variables para `r nrow(data)` muestras de cristales.Las variables constantes y valores anómalos han sido tratados, y se conservan las variables categóricas con su notación original.
+
+# Análisis Clustering  [5 páginas máximo]
+
+## Descripción de los datos utilizados
+
+<!-- Selección de variables a incluir en el modelo? Centrado y escalado? Transformación de variables? -->
+
+El objetivo del análisis clustering aplicado a esta base de datos es encontrar grupos de cristales que tengan propiedades químicas similares. Para ello, se incluyen en el modelo las 8 variables numéricas que recogen la proporción relativa de 8 elementos químicos. Además, se empleará la variable categórica type como auxiliar, tratando de determinar si existe una relación entre los clusters formados y estos tipos de cristales predefinidos.
+
+Es necesario aplicar un centrado y escalado de los datos, pues las magnitudes difieren significativamente de unos elementos químicos a otros. Además, se imputan los dos valores faltantes de la variable potasio K.
+
+```{r selvar, fig.width=3.5, fig.height=3.5}
+cristales = subset(data, select = c(2:9)) # coger solo composición química
+potasioImp = mice(cristales, seed = 123, m=1, print=FALSE, method=NULL) # imputar NA de K
+dataClust = complete(potasioImp) # sustituir NA de K
+```
+
+```{r}
+dataClust = scale(dataClust, center = TRUE, scale = TRUE)
+```
+
+
+## Elección de la medida de distancia y tendencia de agrupamiento
+
+Resulta interesante tanto agrupar los cristales según los valores de cada elementos químico, como a partir de similitudes en sus perfiles. Por ello se realizan dos análisis paralelos.
+
+Para el primero, basado en magnitud, se emplea la distancia de Manhattan, pues se adapta mejor a las distribuciones asimétricas y valores inconsistentes que presentan nuestros datos.
+
+## Determinación del número de clústeres
+
+
+
+
+## Comparación de métodos de clustering
+
+<!-- Indicar claramente el método elegido y justificar la decisión. -->
+
+
+## Interpretación de los resultados del clustering
+
+### Caracterización de los clústeres obtenidos
+
+
+### Relación de los clústeres con otras variables 
+
+
+
+# Modelos PLS  [5 páginas máximo]
+
+## Descripción de los datos utilizados y objetivo
+
+<!-- Selección de variables a incluir en el modelo? Centrado y escalado? Transformación de variables? -->
+
+<!-- Indicar si se va a aplicar PLS o PLS-DA y justificarlo. -->
+
+
+## Optimización del modelo
+
+<!-- Determinación del número de componentes y procedimiento empleado para estimarlo -->
+
+
+## Validación del modelo
+
+
+## Interpretación del modelo
+
+
+## Conclusiones
+
+
+
+
+# Análisis Discriminante  [OPCIONAL. 2 páginas máximo]
+
+
+
