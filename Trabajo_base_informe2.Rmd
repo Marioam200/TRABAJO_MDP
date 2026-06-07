@@ -29,6 +29,9 @@ library(clValid)
 library(aricode)
 library(biostatcolors)
 library(flextable) # hace falta instalarlo
+library(caret)
+library(PLSandO)
+library(gridExtra)
 ```
 
 # Descripción de la BBDD
@@ -415,28 +418,86 @@ Sin embargo, podríamos relacionar los valores máximos de dureza (nivel 7) y op
 
 
 
-# Modelos PLS  [5 páginas máximo]
+# Modelos PLS
 
-## Descripción de los datos utilizados y objetivo
+## Descripción de datos y objetivo
 
-<!-- Selección de variables a incluir en el modelo? Centrado y escalado? Transformación de variables? -->
+Se busca predecir cuál será el tipo de cristal en función de todas las demás variables, clasificando en uno de los cinco grupos disponibles. Al ser una variable categórica se llevará a cabo un PLS-DA  y para llevarlo a cabo se usará el resto. Como el resultado debe ser un modelo que categorice, no tendría sentido aplicar un PLS, ya que solo se utilizaría en el caso de querer predecir el valor de una de las variables en función de las otras, por ejemplo, predecir la dureza a partir de la composición química. Como no será perjudicial para el análisis la multicolinealidad, transparencia y color, que son dos variables con correspondencias directas, pueden ser incluidas en el modelo. Por la disparidad entre los valores y escalas de algunas variables, como las diferencias entre hardness (que va del 1 al 7) y el RI (cuyos valores solo varían en centésimas o milésimas), sí que sería recomendable un autoescalado, consiguiendo así que todas tengan un mismo peso inicial a la hora de hacer el modelo. AL incluir la función de PLSandO una opción para hacer el escalado, no será necesario hacerlo en un paso previo.
 
-<!-- Indicar si se va a aplicar PLS o PLS-DA y justificarlo. -->
-
+```{r}
+#asegurarse de que todo está en el tipo de dato correcto
+data$type <- as.factor(data$type)
+data$color <- as.factor(data$color)
+data$transparency <- as.factor(data$transparency)
+y = data.frame(type = data$type)
+X = subset(data, select = -type)
+```
 
 ## Optimización del modelo
 
-<!-- Determinación del número de componentes y procedimiento empleado para estimarlo -->
+Para hacer el modelo se debe tener en cuenta tanto el número de casos en la base de datos como la poca representación de algunos tipos, como el tipo 3 que cuenta con 13 individuos. Por ello se usará el 85% de los datos para la construcción del modelo, ya que mantener demasiados datos fuera podría llegar a ser perjudicial. También se usará el algoritmo nipals, ya que las variables de la matriz X no están agrupadas por bloques (para lo que se usaría mbpls) y se tomarán 10 pliegues con 3 repeticiones de validación cruzada, ya que en este caso no sería apropiado hacer el método Leave-One-Out, especialmente por la presencia de grupos menos representados.
 
+```{r}
+set.seed(100)
+myplsda = plsda(x = X, y = y, ncomp = NULL, cvFolds = 10, rep = 3, 
+                perm = 20, algo = "nipals", train = 0.85, alpha = 0.05, 
+                scaling = "standard", parallel = FALSE)
+plsdaPlot(myplsda, type = 'ncomp')
+```
+Se puede observar cómo se alcanzan máximos para Q² y R², BER y el F1-score para las dos componentes, observándose como un aumento de este número ya supondría un caso de overfitting en el que se obtendría un modelo menos adecuado para las predicciones.
+
+```{r}
+resumen = myplsda$summar
+resumen[,-1] = round(resumen[,-1], 4)
+kable(t(resumen))
+```
+Hay una mejora clara al añadir la segunda componente, obteniendo valores aceptables en las distintas métricas para la base de datos de la que se dispone, ya que se trata de predecir en uno de 5 grupos.
 
 ## Validación del modelo
+
+Se empieza comprobando la existencia de anómalos a través de la T² de Hotelling y la Suma de Cuadrados Residual, con límite de confianza del 99%.
+
+```{r, fig.width=7, fig.height=3.5}
+anomalos = plsOutliers(myplsda, conf = 0.99)
+length(anomalos$SevereOutliers)
+length(anomalos$ModerateOutliers)
+```
+
+
+Como se puede observar, habrá 6 anómalos severos y 2 moderados, cuya interpretación se analizará en las conclusiones.
+
+```{r, fig.width=6, fig.height=4}
+plsPlot(myplsda, type = "overfitting")
+```
+Se puede observar claramente que el modelo PLS-DA ajustado tiene Q² y R² por encima del 0.2, mientras que los modelos generados al azar están cerca del 0, incluso en valores negativos en algunos casos, lo cual indica que parece no haber sobreajuste en el modelo.
 
 
 ## Interpretación del modelo
 
-
+```{r interpr, message=FALSE}
+p1 = plsdaPlot(myplsda, type = 'scoresX', comp = 1:2)
+p2 = plsdaPlot(myplsda, type = 'weights', comp = 1:2, col = c("red3", "blue4"))
+grid.arrange(p1, p2, nrow = 1)
+plsVarSel(myplsda, type = 'VIP', threshold = 1)
+```
+En ambos gráficos se distingue cómo son el tipo 4 y el 5 los que más se diferencian de los otros tres, principalmente en la primera componente. Los tipos 1,2 y 3 parecen ser mucho más similares entre ellos. Algunos de los predictores que ayudan a discriminar más son el Bario, el magnesio, el Alumninio, el Sodio y el color_OT(otros).
+Como los datos del test pertenecen a la misma población que las observaciones usadas para el modelo, se puede pasar directamente a observar las medidas del error de éstas
+```{r prediDAtrain, message=FALSE, warning=FALSE}
+mypred = predict(myplsda, plot = FALSE)
+mypred = factor(mypred$Class$type)
+myobs = myplsda$input$Y$type
+caret::confusionMatrix(mypred, myobs, positive = "M")  
+```
+```{r prediDAtest2}
+mypred = factor(mypred)
+myobs = factor(myplsda$test$input$yTest$type)
+levels(mypred)<-levels(myobs)
+length(mypred)
+length(myobs)
+caret::confusionMatrix(mypred, myobs)  
+```
 ## Conclusiones
-
+En cuanto a los anómalos, los dos moderados podrían deberse a composiciones químicas poco comunes respecto al resto de la base de datos, haciendo que el modelo no sepa en qué grupo asignarlos. Para los 6 severos, se podría deber a concentraciones extremas de algún componente.
 
 # Análisis Discriminante  [OPCIONAL. 2 páginas máximo]
 
