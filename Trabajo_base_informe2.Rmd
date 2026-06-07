@@ -190,6 +190,7 @@ for (metodo in metodos_hc) {
   print(p2$data)
 }
 ```
+
 Recogemos la cantidad de clústers que consideramos óptima según cada método en la siguiente tabla:
 
 ```{r}
