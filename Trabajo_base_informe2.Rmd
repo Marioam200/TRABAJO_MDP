@@ -486,6 +486,9 @@ mypred = factor(mypred$Class$type)
 myobs = myplsda$input$Y$type
 caret::confusionMatrix(mypred, myobs, positive = "M")  
 ```
+```{r prediDAtest, fig.width=4, fig.height=4}
+mypred = predict(myplsda, new = myplsda$test$input$xTest, plot = TRUE)
+```
 ```{r prediDAtest2}
 mypred = factor(mypred)
 myobs = factor(myplsda$test$input$yTest$type)
