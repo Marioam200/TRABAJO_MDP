@@ -491,7 +491,7 @@ caret::confusionMatrix(mypred, myobs, positive = "M")
 mypred = predict(myplsda, new = myplsda$test$input$xTest, plot = TRUE)
 ```
 ```{r prediDAtest2}
-mypred = factor(mypred)
+mypred = factor(mypred$Class$type)
 myobs = factor(myplsda$test$input$yTest$type)
 levels(mypred)<-levels(myobs)
 length(mypred)
