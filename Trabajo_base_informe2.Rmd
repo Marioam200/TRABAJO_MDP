@@ -30,8 +30,6 @@ library(aricode)
 library(biostatcolors)
 library(flextable) # hace falta instalarlo
 library(caret)
-library(PLSandO)
-library(gridExtra)
 ```
 
 # Descripción de la BBDD
