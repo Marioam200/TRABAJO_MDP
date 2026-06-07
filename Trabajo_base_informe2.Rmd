@@ -434,11 +434,11 @@ X = subset(data, select = -type)
 
 ## Optimización del modelo
 
-Para hacer el modelo se debe tener en cuenta tanto el número de casos en la base de datos como la poca representación de algunos tipos, como el tipo 3 que cuenta con 13 individuos. Por ello se usará el 85% de los datos para la construcción del modelo, ya que mantener demasiados datos fuera podría llegar a ser perjudicial. También se usará el algoritmo nipals, ya que las variables de la matriz X no están agrupadas por bloques (para lo que se usaría mbpls) y se tomarán 10 pliegues con 3 repeticiones de validación cruzada, ya que en este caso no sería apropiado hacer el método Leave-One-Out, especialmente por la presencia de grupos menos representados.
+Para hacer el modelo se debe tener en cuenta tanto el número de casos en la base de datos como la poca representación de algunos tipos, como el tipo 3 que cuenta con 13 individuos. Por ello se usará el 85% de los datos para la construcción del modelo, ya que mantener demasiados datos fuera podría llegar a ser perjudicial. También se usará el algoritmo nipals, ya que las variables de la matriz X no están agrupadas por bloques (para lo que se usaría mbpls) y se tomarán 5 pliegues con 2 repeticiones de validación cruzada, ya que en este caso no sería apropiado hacer el método Leave-One-Out, especialmente por la presencia de grupos menos representados. Un valor de 5 permitirá que haya más posibilidades de que cristales de cada tipo estén en todos los pliegues.
 
 ```{r}
 set.seed(100)
-myplsda = plsda(x = X, y = y, ncomp = NULL, cvFolds = 10, rep = 3, 
+myplsda = plsda(x = X, y = y, ncomp = NULL, cvFolds = 5, rep = 2, 
                 perm = 20, algo = "nipals", train = 0.85, alpha = 0.05, 
                 scaling = "standard", parallel = FALSE)
 plsdaPlot(myplsda, type = 'ncomp')
