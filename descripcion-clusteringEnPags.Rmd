@@ -1,0 +1,441 @@
+---
+title: "Estudio sobre los Cristales"
+author: "Mario Álvarez Martínez, Jorge Aranda Honrubia, Pablo de Puelles Carceles, Julia Ruiz Picó, Cristina Tárraga Herrero (Grupo A1-10)"
+date: "`r Sys.Date()`"
+output:
+  word_document: default
+  pdf_document: default
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE, cache = FALSE, include = TRUE, warning = FALSE, message = FALSE, comment = "")
+
+# Carga directa de librerías (Sin textos de instalación)
+library(readr)
+library(dplyr)
+library(knitr)
+library(gridExtra)
+library(grid)
+library(PLSandO)
+library(FactoMineR)
+library(factoextra)
+library(corrplot)
+library(arules)
+library(arulesViz)
+library(mice)
+library(cluster)
+library(NbClust)
+library(clValid)
+library(aricode)
+library(biostatcolors)
+library(flextable) # hace falta instalarlo
+```
+
+# Descripción de la BBDD
+
+```{r}
+# Todas las variables menos thermal_exp, con 2 faltantes en K
+data <- read.csv("cristales_informe2.csv", row.names = 1)
+
+# Falta eliminar los 11 anómalos severos que aparecían al hacer el PCA
+# NO implementamos la transformación logarítmica de K y Ba porque empeoraba los anómalos.
+
+anomalos <- c(145, 22, 31, 132, 146, 177, 86, 52, 114, 119, 135)  
+
+data <- data[-anomalos,]
+
+cristales = subset(data, select = c(2:9)) # coger solo composición química
+potasioImp = mice(cristales, seed = 123, m=1, print=FALSE, method=NULL) # imputar NA de K
+dataClust = complete(potasioImp) # sustituir NA de K
+dataClust = scale(dataClust, center = TRUE, scale = TRUE)
+dataAux = subset(data, select = c(10:13)) # todas las categóricas como auxiliares
+
+```
+
+
+```{r, echo=FALSE, message=FALSE}
+
+descData <- data.frame(
+  "Variable"    = colnames(data),
+  "Tipo"        = c(rep("numerical", 9),
+                    rep("categorical", 1),
+                    rep("numerical", 1),
+                    rep("categorical", 2),
+                    rep("numerical", ncol(data) - 13)),
+  "Descripción" = c(
+  "Índice de refracción",
+  "Proporción relativa de sodio",
+  "Proporción relativa de magnesio",
+  "Proporción relativa de aluminio",
+  "Proporción relativa de silicio",
+  "Proporción relativa de potasio",
+  "Proporción relativa de calcio",
+  "Proporción relativa de bario",
+  "Proporción relativa de hierro",
+  "Tipo de cristal según su uso (1: ventanas edificios vidrio flotado, 2: ventanas edificios sin vidrio flotado, 3: ventanas vehículos vidrio flotado, 4: envases y artículos de mesa, 5: faros)",
+  "Dureza en escala ordinal Mohs, con mínimo 1 y máximo 7",
+  "Color del cristal (CL: transparente, WH: blanco, OT: otros colores)",
+  "Nivel de transparencia (TP: transparente, TL: translúcido, OP: opaco)",
+  "Densidad"))
+
+flextable(descData) %>%
+  width(j = 3, width = 7) %>%
+  align(j = 3, align = "left") %>%
+  set_table_properties(layout = "autofit")
+```
+
+
+Nos encontramos ante una base de datos que registra información sobre distintos cristales. La base original procede del conjunto de datos Glass del paquete mlbench de R.
+
+En este caso quedan registradas un total de `r ncol(data)` variables para `r nrow(data)` muestras de cristales.
+
+Las variables constantes fueron estudiadas, se trataron los valores extremos y se conservan las variables categóricas con su notación original.
+
+Además, se eliminaron 11 muestras, al tratarse de valores anómalos severos detectados durante el Análisis de Componentes Principales. Para los futuros análisis prescindimos de las transformaciones logarítmicas aplicadas a las variables K y Ba, ya que se comprobó que no tenían el efecto deseado sobre las distribuciones.
+
+
+# Análisis Clustering
+
+## Descripción de los datos utilizados
+
+El objetivo del análisis clustering aplicado a esta base de datos es encontrar grupos de cristales que tengan propiedades químicas similares. Para ello, se incluyen en el modelo las 8 variables numéricas que recogen la proporción relativa de 8 elementos químicos. Además, se emplearán las variables categóricas type, hardness, color y transparency como auxiliares, tratando de determinar si existe una relación entre los clusters formados y las categorías predefinidas de estas.
+
+Es necesario aplicar un centrado y escalado de los datos, pues las magnitudes difieren significativamente de unos elementos químicos a otros. Además, se imputan los dos valores faltantes de la variable potasio K.
+
+```{r}
+cristales = subset(data, select = c(2:9)) # coger solo composición química
+potasioImp = mice(cristales, seed = 123, m=1, print=FALSE, method=NULL) # imputar NA de K
+dataClust = complete(potasioImp) # sustituir NA de K
+
+dataAux = subset(data, select = c(10:13)) # todas las categóricas como auxiliares
+
+dataClust = scale(dataClust, center = TRUE, scale = TRUE)
+```
+
+
+## Elección de la medida de distancia y tendencia de agrupamiento
+
+Estudiamos la tendencia de agrupamiento que presentan las observaciones a partir de su representación en un mapa de calor, tanto para la distancia euclídea como para la de Manhattan.
+
+
+```{r dist2, fig.height=4, fig.width=10, warning=FALSE}
+midist<- get_dist(dataClust, stand = FALSE, method = "euclidean")
+midistManhattan <- get_dist(dataClust, stand = FALSE, method = "manhattan")
+
+p1 = fviz_dist(midist, show_labels = FALSE,
+          gradient = list(low = "#00AFBB", mid = "white", high = "#FC4E07")) + labs(title = "Distancia euclídea")
+
+p2 = fviz_dist(midistManhattan, show_labels = FALSE,
+          gradient = list(low = "#00AFBB", mid = "white", high = "#FC4E07")) + labs(title = "Distancia Manhattan")
+
+grid.arrange(p1, p2, nrow = 1)
+```
+
+Dado que no existen diferencias significativas en la identificación de clústeres para cada distancia, optamos por emplear la euclídea para el resto del análisis, pues nos ofrece más herramientas al ser compatible con diversos métodos de clústering. 
+
+Además, se considera que, tras haber eliminado los valores anómalos de nuestra base de datos, se puede prescindir de la robustez que aportaría la distancia de Manhattan, obteniéndose con ambas resultados similares.
+
+En principio, podemos identificar la presencia de un clúster mayor, y varios de menor tamaño pero mejor definidos. Respaldamos estos indicios de agrupamiento calculando el Índice de Hopkins.
+
+```{r hopkins, cache=TRUE, results='hide'}
+set.seed(100)
+myN = c(30, 70, 100, 120, 140)  # m
+myhopkins = NULL
+myseed = sample(1:1000, 10)
+for (i in myN) {
+  for (j in myseed) {
+    tmp = get_clust_tendency(data = dataClust, n = i, graph = FALSE, seed = j)
+    myhopkins = c(myhopkins, tmp$hopkins_stat)
+  }
+}
+summary(myhopkins)
+```
+Obtenemos valores próximos a 1, concretamente entre `r round(min(myhopkins),2)` y `r round(max(myhopkins),2)`, para todos los valores de m y semillas aleatorias empleadas, por lo que se confirma la tendencia de agrupamiento.
+
+
+## Determinación del número de clústeres
+
+### Modelos jerárquicos
+
+Para determinar el número de clústers de nuestro modelo, se aplicarán en primer lugar modelos jerárquicos (método de Ward, de la media, del centroide, del vecino más próximo y del vecino más lejano).
+
+Se obtienen dos gráficos para cada uno, lo que permite comparar el coeficiente de Silhouette (que queremos que sea máximo, pues cuantifica cómo de buena es la asignación) y la variabilidad intra-clúster (que queremos minimizar) para cada número de clústers.
+
+```{r, fig.show='hide', results = 'hide'}
+
+metodos_hc <- c("ward.D2", "average", "centroid", "single", "complete")
+
+for (metodo in metodos_hc) {
+  
+  p1 <- fviz_nbclust(x = dataClust, FUNcluster = hcut, method = "silhouette",
+                     hc_method = metodo, k.max = 10, verbose = FALSE, diss = midist) +
+    labs(title = "Silhouette")
+  
+  p2 <- fviz_nbclust(x = dataClust, FUNcluster = hcut, method = "wss",
+                     hc_method = metodo, k.max = 10, verbose = FALSE, diss = midist) +
+    labs(title = "WSS (codo)")
+  
+  titulo <- textGrob(
+    paste0("Método: ", metodo),
+    gp = gpar(fontsize = 13, fontface = "bold")
+  )
+  
+  grid.arrange(
+    titulo, 
+    arrangeGrob(p1, p2, nrow = 1),
+    nrow = 2,
+    heights = c(0.08, 0.92)
+  )
+  print(p1$data)
+  print(p2$data)
+}
+```
+Recogemos la cantidad de clústers que consideramos óptima según cada método en la siguiente tabla:
+
+```{r}
+resultados_hc <- data.frame(
+  "Método"        = c("ward", "average", "centroid", "single", "complete"),
+  "Clústers"     = c(5, 6, 5, 5, 6),
+  "Silhouette" = c(0.3146, 0.4076, 0.3780, 0.4213, 0.3805),
+  "WSS"        = c(605.74, 750.88, 1113.08, 1130.74, 705.55)
+)
+resultados_hc
+```
+
+Además, representamos cada dendograma, pudiendo concluir que, a excepción del método de Ward, el número de clústers propuesto no es adecuado para nuestro análisis. Para los cuatro últimos métodos, las observaciones quedan concentradas en un clúster principal que contiene la mayoría de muestras de cristales y varios clústeres más pequeños que presentan tan solo 1 o 2 observaciones.
+
+
+```{r dendogramas, fig.width=8, fig.height=6, results = 'hide', fig.show='hide'}
+
+metodos_hc <- c("ward.D2", "average", "centroid", "single", "complete")
+k_optimos  <- c(5,6,5,5,6)
+
+for (idx in seq_along(metodos_hc)) {
+  
+  metodo <- metodos_hc[idx]
+  k      <- k_optimos[idx]
+  
+  # Clustering jerárquico
+  clust_hc <- hclust(midist, method = metodo)
+  
+  # Variable con nombre dinámico: clustward.D2, clustaverage...
+  assign(paste0("clust", metodo), cutree(clust_hc, k = k))
+  
+  # Tabla de tamaños
+  cat("\nMétodo:", metodo, "-- k =", k, "\n")
+  print(table(cutree(clust_hc, k = k)))
+  
+  # Dendrograma
+  print(
+    fviz_dend(clust_hc, k = k,
+              cex = 0.5,
+              color_labels_by_k = TRUE,
+              rect = TRUE,
+              main = paste0("Dendrograma — Método: ", metodo))
+  )
+}
+```
+Representamos los gráficos para el método de Ward, donde se observa que el valor óptimo de Silhouette, a excepción de en 2 clústers, queda entre 5 y 10 clústers, ya que el coeficiente de Silhouette se mantiene más o menos constante y la variabilidad intra-clúster ha disminuido bastante, a partir del codo de la gráfica.
+
+```{r koptJER2, fig.width=6, fig.height=3}
+p1 = fviz_nbclust(x = dataClust, FUNcluster = hcut, method = "silhouette", hc_method = "ward.D2",
+             k.max = 10, verbose = FALSE, diss = midist) +
+  labs(title = "Num. clusters")
+p2 = fviz_nbclust(x = dataClust, FUNcluster = hcut, method = "wss", hc_method = "ward.D2",
+             k.max = 10, verbose = FALSE, diss = midist) +
+  labs(title = "Num. clusters")
+grid.arrange(p1, p2, nrow = 1)
+```
+Para decantarnos por un número de clústers aplicamos varios criterios haciendo uso de la librería NbClust.
+
+```{r, fig.width=6, fig.height=3, results='hide', fig.show='hide'}
+res.nbclust <- NbClust(data = dataClust, diss = midist, distance = NULL, 
+                        min.nc = 5, max.nc = 10, 
+                        method = "ward.D2", index ="all") 
+```
+Concluimos, al tratarse del número de clústers más votado con diferencia, que el óptimo para el método de Ward son 6 clústers. En el dendograma se observan 4 clústers equilibrados en cuanto al número de observaciones, uno un poco mayor, y el más pequeño con tan solo 5 muestras de cristales.
+
+```{r ward, fig.width=8, fig.height=6, warning=FALSE, fig.show='hide', results='hide'}
+# Aquí se crea la variable de ward que se usa más adelante
+
+clust1 <- hclust(midist, method="ward.D2")
+clustWard <- cutree(clust1, k=6)
+table(clustWard)
+fviz_dend(clust1, k = 6,
+          cex = 0.5, color_labels_by_k = TRUE,
+          rect = TRUE) # dibujar rectángulos
+```
+
+### Métodos de partición
+
+Aplicamos el algoritmo k-medias y el k-medoides para determinar el número óptimo de clústers y poder compararlo con el resultado obtenido a partir de los métodos jerárquicos.
+
+
+```{r koptKmeans, fig.width=6, fig.height=3, results='hide', fig.show='hide'}
+p1 = fviz_nbclust(x = dataClust, FUNcluster = kmeans, method = "silhouette", 
+             k.max = 10, verbose = FALSE, diss = midist) +   labs(title = "K-means")
+p2 = fviz_nbclust(x = dataClust, FUNcluster = kmeans, method = "wss", 
+             k.max = 10, verbose = FALSE, diss = midist) +   labs(title = "K-means")
+grid.arrange(p1, p2, nrow = 1)
+```
+
+El método de k-medias indica 6 clústers como el número óptimo, en el que, nuevamente, se identifica un clúster más pequeño con 5 muestras de cristales.
+
+
+```{r kmeans, fig.width=3, fig.height=3}
+# se guarda en la variable de k-medias
+set.seed(100)
+clustKmeans <- kmeans(dataClust, centers = 6, nstart = 20)
+table(clustKmeans$cluster)
+```
+
+Para k-medoides, la cantidad de clústers más apropiada está entre 5 y 6, tal como se ve representado en el gráfico. El criterio WSS ubica el codo en 5 clústers, por lo que nos decantamos por esta cantidad al no haber diferencias notables en los coeficientes de Silhouette.
+
+```{r koptPam, fig.width=6, fig.height=3, fig.show='hide'}
+p1 = fviz_nbclust(x = dataClust, FUNcluster = pam, method = "silhouette", 
+             k.max = 10, verbose = FALSE, diss = midist) +
+  labs(title = "Numero optimo de clusters")
+p2 = fviz_nbclust(x = dataClust, FUNcluster = pam, method = "wss", 
+             k.max = 10, verbose = FALSE, diss = midist) +
+  labs(title = "Numero optimo de clusters")
+grid.arrange(p1, p2, nrow = 1)
+```
+```{r pam2, fig.width=3, fig.height=3}
+clustKmedoides <- pam(midist, diss =TRUE, k = 5)
+table(clustKmedoides$clustering)
+```
+
+## Comparación de métodos de clustering
+
+Para tomar la decisión final respecto al número de clústers y el método empleado, comparamos los resultados hasta el momento (Ward, k-means, k-medoides). Para ello, se analizan los coeficientes de Silhouette por clúster y las muestras mal clasificadas.
+
+```{r silhouette, fig.width=9, fig.height=4, warning=FALSE}
+colores = biostatcolors::getbiostatColors()[1:5]
+colores2 = biostatcolors::getbiostatColors()[1:6]
+par(mfrow = c(1,3))
+plot(silhouette(clustWard, midist), col=colores2, border=NA, main = "WARD")
+plot(silhouette(clustKmeans$cluster, midist), col=colores2, border=NA, main = "K-MEDIAS")
+plot(silhouette(clustKmedoides$clustering, midist), col=colores, border=NA, main = "K-MEDOIDES")
+```
+
+En primer lugar, descartamos emplear el método de Ward. Su coeficiente de Silhouette global es el menor y la mayoría de sus clústers presentan bastantes observaciones que no pertenecen al cluster donde fueron asignadas. Además, tres de ellos presentan valores de Silhouette reducidos (menores a 0.10).
+
+Respecto k-medias, tiene el valor global más alto (0.37) y dos de sus clústers también tienen un coeficiente de Silhouette muy positivo, sin muestras mal clasificadas. El peor clúster (0.10), coincide con el que tan solo contiene 5 individuos.
+
+Por último, k-medoides tiene valores más estables del coeficiente de Silhouette para cada clúster, siendo el global 0.32. No presenta un número excesivo de observaciones mal clasificadas.
+
+Para tomar una decisión, aplicamos medidas internas y de estabilidad para cada opción planteada,
+
+
+```{r validation, fig.width=9, fig.height=3,}
+metodos = c("hierarchical","kmeans","pam")
+validacion = suppressMessages(clValid(dataClust, nClust = 5:6, metric = "euclidean", 
+                      clMethods = metodos, 
+                      validation = c("internal", "stability"),
+                      method = "ward"))
+
+# se pone entre 5 y 6 clústers porque es el rango que se está planteando
+
+# summary(validacion)
+optimalScores(validacion)
+```
+
+La mayoría de medidas de estabilidad sugieren los 6 clústers de k-medias como la opción óptima, lo que también ocurre para Silhouette. Nos decantamos por este método.
+
+
+## Interpretación de los resultados del clustering
+
+### Caracterización de los clústeres obtenidos
+
+En primer lugar, vamos a realizar un análisis de PCA completo para ver cuáles de las variables utilizadas en el clustering han contribuido más a la determinación de los clusters obtenidos mediante k-medias. Se emplean los datos ya validados en el procedimiento de PCA de la entrega anterior (centrados, escalados y con la eliminación de anómalos severos).
+
+```{r, results='hide'}
+misclust = factor(clustKmeans$cluster)
+
+miPCA = pca(dataClust, scaling = "none")
+pcaPlot(miPCA, type = 'scree')
+K = 4
+kable(miPCA$explVar[1:K,])
+```
+Basándonos en el criterio de contención de como mínimo el 80% de la variabilidad original, tomamos 4 componentes principales, lo que además facilitará la representación gráfica dos a dos.
+
+```{r PCAkmeans_scores, fig.width=9, fig.height=4}
+p1 <- pcaPlot(miPCA, type = 'scores', comp = 1:2, 
+              colBy = data.frame("clust" = misclust), labels = TRUE,
+              labelTop = 0.1, repel = TRUE)
+p2 <- pcaPlot(miPCA, type = 'scores', comp = 3:4, 
+              colBy = data.frame("clust" = misclust), labels = TRUE,
+              labelTop = 0.1, repel = TRUE)
+grid.arrange(p1, p2, nrow = 1)
+```
+
+```{r PCAkmeans_corr, fig.width=9, fig.height=4}
+p3 <- pcaPlot(miPCA, type = 'corr', comp = 1:2, colBy = "contrib", 
+              labels = TRUE, repel = TRUE, col = "hot")
+p4 <- pcaPlot(miPCA, type = 'corr', comp = 3:4, colBy = "contrib", 
+              labels = TRUE, repel = TRUE, col = "hot")
+grid.arrange(p3, p4, nrow = 1)
+```
+
+El clúster 1 se caracteriza por su alto contenido en calcio y magnesio, y sus bajas proporciones de potasio, bario y aluminio. El clúster 2 presenta una alta proporción de bario y alumunio y bajo contenido en calcio. El clúster 3, muy concentrado, agrupa muestras sin proporciones extremas de ningún elemento. En el clúster 4 se incluyen cristales con alto contenido en calcio y silicio. El clúster 5 destaca por la elevada proporción de hierro. Y el clúster 6, también compacto, recoge observaciones ricas en Na, Ba y Al.
+
+```{r perfiles, fig.width=6, fig.height=4, results='hide'}
+mediasCluster = aggregate(dataClust, by = list("cluster" = misclust), mean)[,-1]
+rownames(mediasCluster) = paste0("c",1:6)
+kable(t(round(mediasCluster,2)))
+matplot(t(mediasCluster), type = "l", col = colores2, ylab = "", xlab = "", lwd = 2,
+        lty = 1, main = "Perfil medio de los clusters", xaxt = "n")
+axis(side = 1, at = 1:ncol(dataClust), labels = colnames(dataClust), las = 2)
+legend("topleft", as.character(1:6), col = colores2, lwd = 2, ncol = 3, bty = "n")
+```
+
+Esta representación respalda la interpretación de los clústeres propuesta a partir del PCA.
+
+### Relación de los clústeres con otras variables 
+
+Por último, se estudia la relación entre los clústers que hemos formado y las variables type, color, hardness y transparency:
+
+```{r auxi, fig.width=5, fig.height=3}
+prop.table(table(dataAux$type, clustKmeans$cluster), margin = 2)
+prop.table(table(dataAux$color, clustKmeans$cluster), margin = 2)
+prop.table(table(dataAux$transparency, clustKmeans$cluster), margin = 2)
+prop.table(table(dataAux$hardness, clustKmeans$cluster), margin = 2)
+```
+La variable tipo es la que presenta una relación más clara con los clústeres formados:
+
+El clúster 6 recoge casi exclusivamente cristales de tipo 5, empleados en faros y caracterizados por las proporciones químicas deducidas anteriormente. Por su parte, el clúster 4 concentra las muestras de tipo 4, cuyo uso va destinado a la fabricación de envases y artículos de mesa.
+
+Y los cristales de tipo 1 y 2 (ventanas de edificios) se recogerían en los clusters 3 y 5 principalmente, lo que es lógico, pues las proporciones químicas de ambos clústers son similares, a excepción del hierro. Lo mismo sucede para la categoría CL de la variable color: destaca en estos dos clústers. Por tanto, podríamos vincular el color transparente a las ventanas de edificios.
+
+La composición química del clúster 1 no puede asociarse a un uso ni un color concreto.
+
+Respecto a las variables transparencia y dureza, no se perciben patrones claros, especialmente por el dominio que tiene la transparencia TP en la mayoría de clústers. 
+
+Sin embargo, podríamos relacionar los valores máximos de dureza (nivel 7) y opacidad (OP) presentes en el clúster 6 con el uso de los cristales de este clúster en faros, donde podrían requerirse estas características.
+
+
+# Modelos PLS  [5 páginas máximo]
+
+## Descripción de los datos utilizados y objetivo
+
+<!-- Selección de variables a incluir en el modelo? Centrado y escalado? Transformación de variables? -->
+
+<!-- Indicar si se va a aplicar PLS o PLS-DA y justificarlo. -->
+
+
+## Optimización del modelo
+
+<!-- Determinación del número de componentes y procedimiento empleado para estimarlo -->
+
+
+## Validación del modelo
+
+
+## Interpretación del modelo
+
+
+## Conclusiones
+
+
+# Análisis Discriminante  [OPCIONAL. 2 páginas máximo]
+
